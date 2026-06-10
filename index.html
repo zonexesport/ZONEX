@@ -333,6 +333,7 @@ hr.cyber{border:none;border-top:1px solid rgba(0,245,255,0.06);margin:14px 0;}
 .match-type-badge{font-family:var(--font-hd);font-size:8px;padding:3px 8px;letter-spacing:2px;}
 .mt-br{background:rgba(255,107,43,0.1);color:var(--orange);border:1px solid rgba(255,107,43,0.25);}
 .mt-cs{background:rgba(0,245,255,0.08);color:var(--cyan);border:1px solid rgba(0,245,255,0.22);}
+.mt-daily{background:rgba(0,230,118,0.08);color:var(--green);border:1px solid rgba(0,230,118,0.25);}
 
 .match-teams-row{padding:14px 16px;display:grid;grid-template-columns:1fr auto 1fr;align-items:center;gap:12px;}
 .match-team-box{background:rgba(255,255,255,0.02);border:1px solid rgba(255,255,255,0.05);padding:10px 13px;}
@@ -512,6 +513,7 @@ html, body {
       <div id="tab-register" class="auth-form" style="display:none">
         <label class="fl">👤 Full Name</label><input class="fi" type="text" id="rn" placeholder="Your real name"/>
         <label class="fl">📱 Phone Number</label><input class="fi" type="tel" id="rp" placeholder="10-digit number"/>
+        <label class="fl">💬 WhatsApp Number <span style="color:var(--muted);font-size:9px">(if different from phone)</span></label><input class="fi" type="tel" id="rwa" placeholder="WhatsApp number (leave blank if same)"/>
         <label class="fl">🎮 Free Fire UID</label><input class="fi" type="text" id="ru" placeholder="e.g. 1234567890"/>
         <label class="fl">⚡ In-Game Name (IGN)</label><input class="fi" type="text" id="ri" placeholder="Your FF username"/>
         <label class="fl">🔐 Password</label><input class="fi" type="password" id="rw" placeholder="Create a password"/>
@@ -562,9 +564,9 @@ html, body {
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
       Matches
     </button>
-    <button class="mob-nav-item" id="mob-team" onclick="navTeamOrProfile()">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
-      Team
+    <button class="mob-nav-item" id="mob-daily" onclick="nav('profile');setTimeout(()=>switchProfileTab('daily'),200)">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/><line x1="8" y1="14" x2="8" y2="14" stroke-linecap="round" stroke-width="2.5"/><line x1="12" y1="14" x2="12" y2="14" stroke-linecap="round" stroke-width="2.5"/><line x1="16" y1="14" x2="16" y2="14" stroke-linecap="round" stroke-width="2.5"/></svg>
+      Daily
     </button>
     <button class="mob-nav-item" id="mob-notifications" onclick="nav('notifications')">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
@@ -744,16 +746,16 @@ function doLogin(){
 }
 function doRegister(){
   const name=v('rn'),ph=v('rp').replace(/\D/g,''),uid=v('ru'),ign=v('ri'),pw=v('rw');
+  const wa=v('rwa').replace(/\D/g,'')||ph;
   if(!name||!ph||!uid||!ign||!pw){set('re','⚠ ALL FIELDS REQUIRED');return;}
   if(ph.length<10){set('re','⚠ INVALID PHONE NUMBER');return;}
   if(DB.users.find(u=>u.phone.replace(/\D/g,'')===ph)){set('re','⚠ PHONE ALREADY REGISTERED — ONE PROFILE PER NUMBER');return;}
   if(DB.users.find(u=>u.uid===uid&&u.role!=='admin')){set('re','⚠ FREE FIRE UID ALREADY REGISTERED');return;}
 
-  // Check if approval is required
   const needsApproval = DB._d.settings && DB._d.settings.requireApproval;
   const status = needsApproval ? 'pending' : 'approved';
 
-  const u={id:'u'+Date.now(),phone:ph,password:pw,name,ign,uid,role:regRole,teamId:null,joinedRole:regRole,status:status};
+  const u={id:'u'+Date.now(),phone:ph,whatsapp:wa,password:pw,name,ign,uid,role:regRole,teamId:null,joinedRole:regRole,status:status};
   DB.users.push(u);
   DB.save();
 
@@ -806,11 +808,12 @@ function getMyNotifCount(){
   }
   if(cu.role==='admin'){
     const roleReqs=DB.requests.filter(r=>r.type==='role_change'&&r.status==='pending').length;
+    const dailyJoinPending=DB.requests.filter(r=>r.type==='daily_join'&&r.status==='pending').length;
     const chatUnread=DB.teams?DB.teams.reduce((sum,t)=>{
       const key='adminchat_'+t.id;
       return sum+(DB._d.chat&&DB._d.chat[key]?DB._d.chat[key].msgs.filter(m=>m.userId!=='admin1'&&!m.read).length:0);
     },0):0;
-    return roleReqs+chatUnread;
+    return roleReqs+dailyJoinPending+chatUnread;
   }
   return matchAlerts;
 }
@@ -829,7 +832,7 @@ function updateNotifBadge(){
 
 const menus={
   admin:[{id:'dashboard',l:'Dashboard'},{id:'seasons',l:'Seasons'},{id:'tournaments',l:'Tournaments'},{id:'matches',l:'Matches'},{id:'point-table',l:'Point Table'},{id:'teams',l:'All Teams'},{id:'players',l:'All Players'},{id:'team-chats',l:'Team Chats'},{id:'approvals',l:'Approvals'},{id:'notifications',l:'Notifications'},{id:'add-tournament',l:'Add Tournament'}],
-  captain:[{id:'dashboard',l:'Dashboard'},{id:'seasons',l:'Seasons'},{id:'tournaments',l:'Tournaments'},{id:'matches',l:'My Matches'},{id:'my-team',l:'My Team'},{id:'point-table',l:'Point Table'},{id:'admin-chat',l:'Contact Admin'},{id:'notifications',l:'Notifications'}],
+  captain:[{id:'dashboard',l:'Dashboard'},{id:'seasons',l:'Seasons'},{id:'tournaments',l:'Tournaments'},{id:'matches',l:'My Matches'},{id:'my-team',l:'My Team'},{id:'point-table',l:'Point Table'},{id:'admin-chat',l:'Contact Admin'},{id:'notifications',l:'Notifications'},{id:'profile',l:'My Profile'}],
   player:[{id:'dashboard',l:'Dashboard'},{id:'seasons',l:'Seasons'},{id:'tournaments',l:'Tournaments'},{id:'matches',l:'My Matches'},{id:'point-table',l:'Point Table'},{id:'admin-chat',l:'Contact Admin'},{id:'notifications',l:'Notifications'},{id:'profile',l:'My Profile'}],
 };
 const ico={
@@ -970,7 +973,7 @@ function tCardFn(t){
   const ac={open:'var(--green)',closed:'var(--muted)',ongoing:'var(--gold)'}[t.status];
   const regs=DB.registrations.filter(r=>r.tournamentId===t.id).length;
   return`<div class="tcard"><div class="tcard-accent" style="background:${ac}"></div>
-    <div class="tcard-top"><div><div class="tcard-name">${t.name}</div><div class="tcard-meta">📅 ${t.date} · 🗺 ${t.map||'TBD'} · 👥 ${regs}/${t.maxTeams||12}</div></div><span class="badge ${sc}">${t.status.toUpperCase()}</span></div>
+    <div class="tcard-top"><div><div class="tcard-name">${t.name}</div><div class="tcard-meta">📅 ${t.date} · 🗺 ${t.map||'TBD'} · 👥 ${regs}/${t.maxTeams||12}${t.format?' · '+t.format:''}</div></div><span class="badge ${sc}">${t.status.toUpperCase()}</span></div>
     <div class="tcard-body"><div class="tcard-prize">🏆 ${t.prize||'—'}</div>${t.entry?`<div style="font-family:var(--font-mono);font-size:10px;color:var(--gold2)">ENTRY: ${t.entry}</div>`:''}</div>
   </div>`;
 }
@@ -1071,7 +1074,7 @@ function pTour(el){
     return`<div class="tcard"><div class="tcard-accent" style="background:${ac}"></div>
       <div class="tcard-top">
         <div style="flex:1"><div class="tcard-name">${t.name}</div>
-          <div class="tcard-meta">📅 ${t.date} · 🗺 ${t.map||'TBD'} · 👥 ${regs}/${t.maxTeams||12} teams</div>
+          <div class="tcard-meta">📅 ${t.date} · 🗺 ${t.map||'TBD'} · 👥 ${regs}/${t.maxTeams||12} teams${t.format?' · '+t.format:''}</div>
           ${t.desc?`<div style="font-size:11px;color:rgba(255,255,255,0.35);margin-top:3px">${t.desc}</div>`:''}
           ${adBtns}</div>
         <div style="display:flex;flex-direction:column;align-items:flex-end;gap:7px">
@@ -1133,6 +1136,27 @@ function pAddTour(el){
       <label class="fl">Tournament Name</label><input class="fi" id="tn" placeholder="e.g. ZoneX Season 3 Finals"/>
       <label class="fl">Date</label><input class="fi" id="td" placeholder="e.g. 20 June 2026"/>
       <label class="fl">Map</label><input class="fi" id="tm" placeholder="Bermuda / Kalahari / Purgatory"/>
+
+      <label class="fl">Squad Format</label>
+      <div style="display:flex;gap:8px;margin-bottom:16px">
+        <div class="role-opt sel-ply" id="tour-fmt-squad" onclick="pickTourFormat('SQUAD')" style="flex:1;padding:10px 6px;text-align:center;cursor:pointer">
+          <div style="font-size:20px;margin-bottom:3px">👥</div>
+          <div style="font-family:var(--font-hd);font-size:9px;font-weight:700;letter-spacing:2px">SQUAD</div>
+          <div style="font-size:9px;color:rgba(255,255,255,0.4);margin-top:2px">4 Players</div>
+        </div>
+        <div class="role-opt" id="tour-fmt-duo" onclick="pickTourFormat('DUO')" style="flex:1;padding:10px 6px;text-align:center;cursor:pointer">
+          <div style="font-size:20px;margin-bottom:3px">🤝</div>
+          <div style="font-family:var(--font-hd);font-size:9px;font-weight:700;letter-spacing:2px">DUO</div>
+          <div style="font-size:9px;color:rgba(255,255,255,0.4);margin-top:2px">2 Players</div>
+        </div>
+        <div class="role-opt" id="tour-fmt-solo" onclick="pickTourFormat('SOLO')" style="flex:1;padding:10px 6px;text-align:center;cursor:pointer">
+          <div style="font-size:20px;margin-bottom:3px">🎮</div>
+          <div style="font-family:var(--font-hd);font-size:9px;font-weight:700;letter-spacing:2px">SOLO</div>
+          <div style="font-size:9px;color:rgba(255,255,255,0.4);margin-top:2px">1 Player</div>
+        </div>
+      </div>
+      <input type="hidden" id="tour-format-val" value="SQUAD"/>
+
       <label class="fl">Prize Pool</label><input class="fi" id="tp" placeholder="e.g. ₹5,000"/>
       <label class="fl">Max Teams</label><input class="fi" type="number" id="tmx" value="12"/>
       <label class="fl">Entry Fee (type 'Free' if no fee)</label><input class="fi" id="te" placeholder="e.g. ₹10 per squad / Free"/>
@@ -1149,6 +1173,16 @@ function pAddTour(el){
       <button class="btn btn-cyan btn-full" onclick="addTour()">⚡ CREATE TOURNAMENT</button>
     </div></div>`;
 }
+
+let _tourFormat='SQUAD';
+function pickTourFormat(f){
+  _tourFormat=f;
+  if(g('tour-format-val')) g('tour-format-val').value=f;
+  ['squad','duo','solo'].forEach(k=>{
+    const el=g('tour-fmt-'+k);
+    if(el) el.className='role-opt'+(k===f.toLowerCase()?' sel-ply':'');
+  });
+}
 function previewQR(e){
   const f=e.target.files[0];if(!f)return;
   const reader=new FileReader();
@@ -1161,36 +1195,530 @@ function previewQR(e){
 function addTour(){
   const name=v('tn'),date=v('td');
   if(!name||!date){showToast('⚠ NAME & DATE REQUIRED',true);return;}
-  DB.tournaments.push({id:'t'+Date.now(),name,date,map:v('tm'),prize:v('tp'),maxTeams:parseInt(v('tmx'))||12,entry:v('te'),qrImage:g('qr-data').value||'',desc:v('tds'),status:'open',createdAt:Date.now()});
+  const fmt=_tourFormat||'SQUAD';
+  DB.tournaments.push({id:'t'+Date.now(),name,date,map:v('tm'),prize:v('tp'),maxTeams:parseInt(v('tmx'))||12,entry:v('te'),format:fmt,qrImage:g('qr-data').value||'',desc:v('tds'),status:'open',createdAt:Date.now()});
   DB.save();showToast('✓ TOURNAMENT CREATED',false,'ok');nav('tournaments');
 }
 
-// ── SCHEDULE ──
+// ══════════════════════════════════════════════
+// MATCHES SYSTEM — Tournament vs Daily
+// ══════════════════════════════════════════════
+
+// ── SCHEDULE / MATCHES PAGE ──
 function pSchedule(el){
-  el.innerHTML=`<div style="animation:pageIn .35s ease"><div class="sec-hd">
-    <div class="sec-title"><div class="sec-bar"></div>SCHEDULE</div>
-    ${cu.role==='admin'?`<button class="btn btn-purple btn-sm" onclick="openAddMatch()">+ MATCH</button>`:''}
-  </div>
-  ${DB.matches.length?DB.matches.map(m=>`
-    <div class="match-card">
-      <div class="match-hd"><span>${m.tournament||'TOURNAMENT'}</span><span>📅 ${m.date||'TBD'} ⏰ ${m.time||'TBD'}</span></div>
-      <div class="match-body">
-        <div class="match-team">${m.team1}</div>
-        <div class="match-vs">VS</div>
-        <div class="match-team" style="text-align:right">${m.team2}</div>
-      </div>
-      ${m.result?`<div class="match-result">🏆 WINNER: ${m.result}</div>`:''}
-      ${cu.role==='admin'?`<div style="padding:0 14px 12px;display:flex;gap:7px">
-        <input class="fi" id="mr-${m.id}" placeholder="Winner team name" style="margin-bottom:0;flex:1;font-size:12px;padding:7px 11px"/>
-        <button class="btn btn-gold btn-sm" onclick="setRes('${m.id}')">SET</button>
-        <button class="btn btn-red btn-sm" onclick="delMatch('${m.id}')">DEL</button></div>`:''}
-    </div>`).join(''):'<div style="text-align:center;padding:40px;color:var(--muted);font-family:var(--font-mono);font-size:10px;letter-spacing:2px">// NO MATCHES SCHEDULED</div>'}
+  const allMatches=DB.matches;
+  const dailyMatches=allMatches.filter(m=>m.matchType==='daily');
+  const tourMatches=allMatches.filter(m=>m.matchType==='tournament'||!m.matchType);
+
+  el.innerHTML=`<div style="animation:pageIn .35s ease">
+    <div class="sec-hd">
+      <div class="sec-title"><div class="sec-bar"></div>MATCHES</div>
+      ${cu.role==='admin'?`<button class="btn btn-purple btn-sm" onclick="openAddMatchType()">+ NEW MATCH</button>`:''}
+    </div>
+
+    <!-- Tabs -->
+    <div class="page-tabs" style="margin-bottom:18px">
+      <button class="page-tab active" id="mtab-daily" onclick="switchMatchTab('daily')">📅 DAILY MATCHES</button>
+      <button class="page-tab" id="mtab-tournament" onclick="switchMatchTab('tournament')">🏆 TOURNAMENT MATCHES</button>
+    </div>
+
+    <!-- Daily Matches -->
+    <div id="match-panel-daily">
+      ${dailyMatches.length?dailyMatches.slice().reverse().map(m=>renderMatchCard(m)).join('')
+        :`<div style="text-align:center;padding:40px;color:var(--muted);font-family:var(--font-mono);font-size:10px;letter-spacing:2px">// NO DAILY MATCHES YET</div>`}
+    </div>
+
+    <!-- Tournament Matches -->
+    <div id="match-panel-tournament" style="display:none">
+      ${tourMatches.length?tourMatches.slice().reverse().map(m=>renderMatchCard(m)).join('')
+        :`<div style="text-align:center;padding:40px;color:var(--muted);font-family:var(--font-mono);font-size:10px;letter-spacing:2px">// NO TOURNAMENT MATCHES YET</div>`}
+    </div>
   </div>`;
 }
-function openAddMatch(){openMo(`<button class="mo-close" onclick="closeMo()">✕</button><div class="mo-title">+ ADD MATCH</div><label class="fl">Team 1</label><input class="fi" id="mt1" placeholder="TEAM NAME"/><label class="fl">Team 2</label><input class="fi" id="mt2" placeholder="TEAM NAME"/><label class="fl">Tournament</label><input class="fi" id="mtr" placeholder="Tournament name"/><label class="fl">Date</label><input class="fi" id="md" placeholder="10 June 2026"/><label class="fl">Time</label><input class="fi" id="mtm" placeholder="8:30 PM"/><button class="btn btn-purple btn-full" onclick="addMatch()">⚡ ADD</button>`);}
-function addMatch(){const t1=v('mt1'),t2=v('mt2');if(!t1||!t2){showToast('⚠ TEAM NAMES REQUIRED',true);return;}DB.matches.push({id:'m'+Date.now(),team1:t1.toUpperCase(),team2:t2.toUpperCase(),tournament:v('mtr'),date:v('md'),time:v('mtm'),result:''});DB.save();closeMo();showToast('✓ MATCH ADDED',false,'ok');pSchedule(g('mc'));}
-function setRes(id){const m=DB.matches.find(x=>x.id===id),r=(g('mr-'+id)?.value||'').trim();if(m&&r){m.result=r.toUpperCase();DB.save();showToast('✓ RESULT SET',false,'ok');pSchedule(g('mc'));}}
-function delMatch(id){if(!confirm('Delete?'))return;DB._d.matches=DB.matches.filter(x=>x.id!==id);DB.save();pSchedule(g('mc'));}
+
+function switchMatchTab(tab){
+  g('mtab-daily').className='page-tab'+(tab==='daily'?' active':'');
+  g('mtab-tournament').className='page-tab'+(tab==='tournament'?' active':'');
+  g('match-panel-daily').style.display=tab==='daily'?'block':'none';
+  g('match-panel-tournament').style.display=tab==='tournament'?'block':'none';
+}
+
+function renderMatchCard(m){
+  const isDaily=m.matchType==='daily';
+  const accentColor=isDaily?'var(--green)':'var(--gold)';
+  const typeBadgeClass=isDaily?'mt-daily':'mt-br';
+  const typeLabel=isDaily?'DAILY':'TOURNAMENT';
+
+  // For daily match — show join status
+  let joinSection='';
+  if(isDaily && cu.role==='captain'){
+    const mt=DB.teams.find(t=>t.captainId===cu.id);
+    const existReq=mt?DB.requests.find(r=>r.type==='daily_join'&&r.matchId===m.id&&r.teamId===mt.id):null;
+    if(existReq){
+      if(existReq.status==='pending'){
+        joinSection=`<div style="padding:0 16px 12px"><span class="badge b-ongoing">⏳ JOIN REQUEST PENDING</span></div>`;
+      } else if(existReq.status==='approved'){
+        joinSection=`<div style="padding:0 16px 12px"><span class="badge b-open">✓ APPROVED — CHECK ROOM DETAILS</span></div>`;
+      } else {
+        joinSection=`<div style="padding:0 16px 12px"><span class="badge b-closed">✗ REJECTED</span></div>`;
+      }
+    } else if(m.status!=='closed'){
+      joinSection=`<div style="padding:0 16px 12px"><button class="btn btn-green btn-sm" onclick="openDailyJoin('${m.id}')">⚡ JOIN MATCH</button></div>`;
+    }
+  }
+
+  // Room info (only show to approved teams or admin)
+  let roomSection='';
+  if(m.roomId||m.roomPass){
+    if(cu.role==='admin'){
+      roomSection=`<div class="room-unlocked" style="margin:0 16px 12px"><div style="display:flex;gap:20px;flex-wrap:wrap"><div><div class="room-lbl">Room ID</div><div class="room-id-val">${m.roomId||'—'}</div></div><div><div class="room-lbl">Password</div><div class="room-pw-val">${m.roomPass||'—'}</div></div></div></div>`;
+    } else if(isDaily){
+      const mt=DB.teams.find(t=>t.captainId===cu.id||t.members.includes(cu.id));
+      const approved=mt&&DB.requests.find(r=>r.type==='daily_join'&&r.matchId===m.id&&r.teamId===mt.id&&r.status==='approved');
+      if(approved){
+        roomSection=`<div class="room-unlocked" style="margin:0 16px 12px"><div style="display:flex;gap:20px;flex-wrap:wrap"><div><div class="room-lbl">Room ID</div><div class="room-id-val">${m.roomId||'—'}</div></div><div><div class="room-lbl">Password</div><div class="room-pw-val">${m.roomPass||'—'}</div></div></div></div>`;
+      }
+    } else {
+      // Tournament match — show room to all team members
+      const mt=DB.teams.find(t=>t.captainId===cu.id||t.members.includes(cu.id));
+      if(mt&&m.teams&&m.teams.includes(mt.id)){
+        roomSection=`<div class="room-unlocked" style="margin:0 16px 12px"><div style="display:flex;gap:20px;flex-wrap:wrap"><div><div class="room-lbl">Room ID</div><div class="room-id-val">${m.roomId||'—'}</div></div><div><div class="room-lbl">Password</div><div class="room-pw-val">${m.roomPass||'—'}</div></div></div></div>`;
+      }
+    }
+  }
+
+  const adminBtns=cu.role==='admin'?`<div style="padding:0 16px 12px;display:flex;gap:6px;flex-wrap:wrap">
+    <button class="btn btn-cyan btn-xs" onclick="openMatchDetails('${m.id}')">⚙ MANAGE</button>
+    <button class="btn btn-red btn-xs" onclick="delMatch('${m.id}')">DEL</button>
+  </div>`:'';
+
+  const teamsDisplay=m.teams&&m.teams.length?
+    m.teams.map(tid=>{const t=DB.teams.find(x=>x.id===tid);return t?`<span style="font-family:var(--font-mono);font-size:10px;color:var(--cyan);margin-right:8px">• ${t.name}</span>`:''}).join('')
+    :'<span style="color:var(--muted);font-size:10px;font-family:var(--font-mono)">Teams TBD</span>';
+
+  return`<div class="match-block" style="border-left:3px solid ${accentColor}">
+    <div class="match-top">
+      <div>
+        <span class="match-type-badge ${typeBadgeClass}">${typeLabel}</span>
+        <span style="font-family:var(--font-mono);font-size:9px;color:var(--muted);margin-left:8px">${m.label||m.tournament||''}</span>
+      </div>
+      <div style="display:flex;gap:8px;align-items:center">
+        <span class="badge ${m.status==='open'?'b-open':m.status==='ongoing'?'b-ongoing':'b-closed'}">${(m.status||'open').toUpperCase()}</span>
+      </div>
+    </div>
+    <div style="padding:10px 16px 8px;display:flex;gap:16px;flex-wrap:wrap">
+      <div><div class="room-lbl">📅 Date</div><div style="font-size:14px;font-weight:600;color:#fff">${m.date||'TBD'}</div></div>
+      <div><div class="room-lbl">⏰ Time</div><div style="font-size:14px;font-weight:600;color:#fff">${m.time||'TBD'}</div></div>
+      <div><div class="room-lbl">🗺 Map</div><div style="font-size:14px;font-weight:600;color:#fff">${m.map||'TBD'}</div></div>
+      ${m.entry?`<div><div class="room-lbl">💰 Entry</div><div style="font-size:14px;font-weight:600;color:var(--gold)">${m.entry}</div></div>`:''}
+      ${m.prize?`<div><div class="room-lbl">🏆 Prize</div><div style="font-size:14px;font-weight:600;color:var(--gold)">${m.prize}</div></div>`:''}
+    </div>
+    <div style="padding:4px 16px 10px">
+      <div class="room-lbl">Teams</div>
+      <div style="margin-top:4px">${teamsDisplay}</div>
+    </div>
+    ${m.result?`<div class="result-banner" style="margin:0 16px 10px"><span style="font-size:16px">🏆</span><span class="result-banner-text">WINNER: ${m.result}</span></div>`:''}
+    ${roomSection}
+    ${joinSection}
+    ${adminBtns}
+  </div>`;
+}
+
+// ── ADMIN: Choose match type to create ──
+function openAddMatchType(){
+  openMo(`<button class="mo-close" onclick="closeMo()">✕</button>
+    <div class="mo-title">+ NEW MATCH</div>
+    <p style="color:var(--muted);font-size:13px;margin-bottom:18px">Match ka type choose karo:</p>
+    <div style="display:flex;flex-direction:column;gap:10px">
+      <div onclick="openAddDailyMatch()" style="cursor:pointer;background:rgba(0,230,118,0.05);border:1px solid rgba(0,230,118,0.25);padding:16px;border-radius:6px;transition:all .2s">
+        <div style="font-size:18px;margin-bottom:6px">📅 DAILY MATCH</div>
+        <div style="font-family:var(--font-mono);font-size:10px;color:var(--muted);line-height:1.7">• Admin match banata hai<br>• Teams seedha join karte hain<br>• Admin payment check karke approve karta hai<br>• Room details approved teams ko milti hain</div>
+      </div>
+      <div onclick="openAddTournamentMatch()" style="cursor:pointer;background:rgba(255,193,7,0.05);border:1px solid rgba(255,193,7,0.25);padding:16px;border-radius:6px;transition:all .2s">
+        <div style="font-size:18px;margin-bottom:6px">🏆 TOURNAMENT MATCH</div>
+        <div style="font-family:var(--font-mono);font-size:10px;color:var(--muted);line-height:1.7">• Pehle tournament hota hai, teams join karti hain<br>• Admin manually teams select karta hai match ke liye<br>• Room details selected teams ko milti hain</div>
+      </div>
+    </div>`);
+}
+
+// ── ADMIN: Create Daily Match ──
+function openAddDailyMatch(){
+  closeMo();
+  const qrData=DB._d.settings?.defaultQr||'';
+  openMo(`<button class="mo-close" onclick="closeMo()">✕</button>
+    <div class="mo-title">📅 NEW DAILY MATCH</div>
+    <label class="fl">Match Label / Name</label>
+    <input class="fi" id="dm-lbl" placeholder="e.g. Thursday Night Battle"/>
+    <label class="fl">Date</label>
+    <input class="fi" id="dm-date" placeholder="e.g. 12 June 2026"/>
+    <label class="fl">Time</label>
+    <input class="fi" id="dm-time" placeholder="e.g. 9:00 PM"/>
+    <label class="fl">Map</label>
+    <input class="fi" id="dm-map" placeholder="Bermuda / Kalahari / Purgatory"/>
+    <label class="fl">Max Teams</label>
+    <input class="fi" type="number" id="dm-max" value="12"/>
+    <label class="fl">Entry Fee (type 'Free' if no fee)</label>
+    <input class="fi" id="dm-entry" placeholder="e.g. ₹10 / Free"/>
+    <label class="fl">Prize Pool</label>
+    <input class="fi" id="dm-prize" placeholder="e.g. ₹500"/>
+    <label class="fl">📱 Payment QR Code</label>
+    <div id="dm-qr-preview-wrap" style="margin-bottom:8px">
+      ${qrData?`<img src="${qrData}" style="width:140px;height:140px;object-fit:contain;border:1px solid rgba(255,215,0,0.3);cursor:pointer" onclick="g('dm-qr-file').click()" title="Click to change"/>`:`<div style="background:rgba(255,215,0,0.03);border:2px dashed rgba(255,215,0,0.2);width:140px;height:140px;display:flex;align-items:center;justify-content:center;font-family:var(--font-mono);font-size:9px;color:var(--muted);letter-spacing:1px;cursor:pointer;flex-direction:column;gap:6px" onclick="g('dm-qr-file').click()"><span style="font-size:24px">📱</span>CLICK TO UPLOAD QR</div>`}
+    </div>
+    <input type="file" id="dm-qr-file" accept="image/*" style="display:none" onchange="previewDmQR(event)"/>
+    <input type="hidden" id="dm-qr-data" value="${qrData}"/>
+    <div class="err-msg" id="dm-err"></div>
+    <button class="btn btn-green btn-full" onclick="createDailyMatch()">⚡ CREATE DAILY MATCH</button>`);
+}
+
+function previewDmQR(e){
+  const f=e.target.files[0];if(!f)return;
+  const reader=new FileReader();
+  reader.onload=function(ev){
+    const data=ev.target.result;
+    if(g('dm-qr-data'))g('dm-qr-data').value=data;
+    if(g('dm-qr-preview-wrap'))g('dm-qr-preview-wrap').innerHTML=`<img src="${data}" style="width:140px;height:140px;object-fit:contain;border:1px solid rgba(255,215,0,0.3);cursor:pointer" onclick="g('dm-qr-file').click()" title="Click to change"/>`;
+  };reader.readAsDataURL(f);
+}
+
+function createDailyMatch(){
+  const lbl=v('dm-lbl'),date=v('dm-date'),time=v('dm-time');
+  if(!lbl||!date){set('dm-err','⚠ LABEL & DATE REQUIRED');return;}
+  const entry=v('dm-entry');
+  const needsPay=entry&&entry.toLowerCase()!=='free'&&entry.trim()!=='';
+  const qrImg=g('dm-qr-data')?.value||'';
+  if(needsPay&&!qrImg){set('dm-err','⚠ PAYMENT QR REQUIRED FOR PAID MATCH');return;}
+  DB.matches.push({
+    id:'m'+Date.now(),
+    matchType:'daily',
+    label:lbl,
+    date,time,
+    map:v('dm-map'),
+    maxTeams:parseInt(v('dm-max'))||12,
+    entry,
+    prize:v('dm-prize'),
+    qrImage:qrImg,
+    status:'open',
+    teams:[],
+    result:'',
+    createdAt:Date.now()
+  });
+  DB.save();closeMo();showToast('✓ DAILY MATCH CREATED',false,'ok');pMatches(g('mc'));
+}
+
+// ── ADMIN: Create Tournament Match ──
+function openAddTournamentMatch(){
+  closeMo();
+  const regTeams=DB.teams;
+  openMo(`<button class="mo-close" onclick="closeMo()">✕</button>
+    <div class="mo-title">🏆 NEW TOURNAMENT MATCH</div>
+    <label class="fl">Tournament Name</label>
+    <input class="fi" id="tm-tour" placeholder="e.g. ZoneX Season 3"/>
+    <label class="fl">Match Label / Round</label>
+    <input class="fi" id="tm-lbl" placeholder="e.g. Quarter Finals"/>
+    <label class="fl">Date</label>
+    <input class="fi" id="tm-date" placeholder="e.g. 15 June 2026"/>
+    <label class="fl">Time</label>
+    <input class="fi" id="tm-time" placeholder="e.g. 8:00 PM"/>
+    <label class="fl">Map</label>
+    <input class="fi" id="tm-map" placeholder="Bermuda / Kalahari"/>
+    <label class="fl">Prize Pool</label>
+    <input class="fi" id="tm-prize" placeholder="e.g. ₹5,000"/>
+    <label class="fl">Select Teams (✓ tick karo)</label>
+    <div id="tm-teams-list" style="max-height:200px;overflow-y:auto;background:#111;border:1px solid rgba(26,111,255,0.2);padding:8px;border-radius:4px;margin-bottom:12px">
+      ${regTeams.length?regTeams.map(t=>`
+        <div style="display:flex;align-items:center;gap:10px;padding:7px 0;border-bottom:1px solid rgba(255,255,255,0.04)">
+          <input type="checkbox" id="tm-team-${t.id}" value="${t.id}" style="width:16px;height:16px;cursor:pointer;accent-color:var(--cyan)"/>
+          <label for="tm-team-${t.id}" style="cursor:pointer;flex:1">
+            <div style="font-size:13px;font-weight:600">${t.name} <span style="font-family:var(--font-mono);font-size:9px;color:var(--purple)">${t.tag}</span></div>
+            <div style="font-family:var(--font-mono);font-size:9px;color:var(--muted)">${t.members.length} members</div>
+          </label>
+        </div>`).join('')
+      :'<div style="text-align:center;padding:20px;color:var(--muted);font-family:var(--font-mono);font-size:10px">// NO TEAMS REGISTERED YET</div>'}
+    </div>
+    <div class="err-msg" id="tm-err"></div>
+    <button class="btn btn-gold btn-full" onclick="createTournamentMatch()">⚡ CREATE TOURNAMENT MATCH</button>`);
+}
+
+function createTournamentMatch(){
+  const tour=v('tm-tour'),lbl=v('tm-lbl'),date=v('tm-date');
+  if(!tour||!date){set('tm-err','⚠ TOURNAMENT NAME & DATE REQUIRED');return;}
+  const selectedTeams=[...document.querySelectorAll('#tm-teams-list input[type=checkbox]:checked')].map(el=>el.value);
+  DB.matches.push({
+    id:'m'+Date.now(),
+    matchType:'tournament',
+    tournament:tour,
+    label:lbl,
+    date,time:v('tm-time'),
+    map:v('tm-map'),
+    prize:v('tm-prize'),
+    teams:selectedTeams,
+    status:'open',
+    result:'',
+    createdAt:Date.now()
+  });
+  DB.save();closeMo();showToast('✓ TOURNAMENT MATCH CREATED',false,'ok');pMatches(g('mc'));
+}
+
+// ── Captain: Join Daily Match (show QR card) ──
+function openDailyJoin(matchId){
+  const m=DB.matches.find(x=>x.id===matchId);
+  const mt=DB.teams.find(t=>t.captainId===cu.id);
+  if(!mt){showToast('⚠ PEHLE APNI TEAM BANAO',true);return;}
+  const needsPay=m.entry&&m.entry.toLowerCase()!=='free'&&m.entry.trim()!=='';
+  openMo(`<button class="mo-close" onclick="closeMo()">✕</button>
+    <div class="mo-title">⚡ JOIN DAILY MATCH</div>
+
+    <!-- Match Info -->
+    <div style="background:rgba(0,230,118,0.04);border:1px solid rgba(0,230,118,0.2);padding:13px;border-radius:6px;margin-bottom:14px">
+      <div style="font-family:var(--font-hd);font-size:15px;letter-spacing:2px;color:var(--green)">${m.label||'Daily Match'}</div>
+      <div style="font-family:var(--font-mono);font-size:10px;color:var(--muted);margin-top:4px;line-height:1.8">
+        📅 ${m.date||'TBD'} &nbsp;⏰ ${m.time||'TBD'} &nbsp;🗺 ${m.map||'TBD'}
+        ${m.entry?`<br>💰 Entry: <span style="color:var(--gold)">${m.entry}</span>`:''}
+        ${m.prize?`<br>🏆 Prize: <span style="color:var(--gold)">${m.prize}</span>`:''}
+      </div>
+    </div>
+
+    <!-- Team Info -->
+    <div style="background:rgba(191,95,255,0.04);border:1px solid rgba(191,95,255,0.12);padding:13px;border-radius:6px;margin-bottom:14px">
+      <div style="font-family:var(--font-mono);font-size:9px;color:var(--purple);letter-spacing:2px;margin-bottom:5px">YOUR TEAM</div>
+      <div style="font-family:var(--font-hd);font-size:16px;letter-spacing:2px">${mt.name} <span style="font-size:11px;color:var(--purple)">${mt.tag}</span></div>
+      <div style="font-family:var(--font-mono);font-size:10px;color:var(--muted);margin-top:2px">${mt.members.length} members</div>
+    </div>
+
+    ${needsPay?`
+    <!-- Payment QR Card -->
+    <div class="qr-area">
+      <div style="font-family:var(--font-mono);font-size:9px;color:var(--gold);letter-spacing:3px;margin-bottom:12px">// PAYMENT REQUIRED — ${m.entry}</div>
+      <div class="qr-img-wrap" id="djoin-qr-display">
+        ${m.qrImage?`<img src="${m.qrImage}" alt="Payment QR Code"/>`:`<div class="qr-placeholder-text">📱<br><br>QR CODE<br>NOT SET<br><br><span style="font-size:8px">Admin needs to add QR</span></div>`}
+      </div>
+      <div style="font-family:var(--font-mono);font-size:11px;color:var(--gold);margin-top:6px">Scan & Pay · Entry: ${m.entry}</div>
+      <div class="utr-area">
+        <div class="utr-lbl">// PAYMENT KE BAAD UTR / TRANSACTION ID ENTER KARO</div>
+        <input class="fi" type="text" id="djoin-utr" placeholder="e.g. UTR123456789012" style="margin-bottom:0"/>
+      </div>
+    </div>`:``}
+
+    <div class="err-msg" id="djoin-err"></div>
+    <div style="background:rgba(0,180,255,0.05);border:1px solid rgba(0,180,255,0.15);padding:10px 12px;border-radius:4px;margin-bottom:12px;font-family:var(--font-mono);font-size:10px;color:var(--muted);line-height:1.7">
+      ⚠ Join request admin ko jayegi.<br>Admin payment check karke approve/reject karega.<br>Approval ke baad room ID & password milega.
+    </div>
+    <button class="btn btn-green btn-full" onclick="submitDailyJoin('${matchId}','${mt.id}',${needsPay})">📩 SEND JOIN REQUEST</button>`);
+}
+
+function submitDailyJoin(matchId,teamId,needsPay){
+  if(needsPay){
+    const utr=(g('djoin-utr')?.value||'').trim();
+    if(!utr){set('djoin-err','⚠ UTR / TRANSACTION ID ENTER KARO');return;}
+  }
+  const utr=g('djoin-utr')?.value||'';
+  const m=DB.matches.find(x=>x.id===matchId);
+  const mt=DB.teams.find(x=>x.id===teamId);
+  DB.requests.push({
+    id:'djoin_'+Date.now(),
+    type:'daily_join',
+    matchId,
+    teamId,
+    captainId:cu.id,
+    utr,
+    status:'pending',
+    at:Date.now(),
+    toUserId:'admin1',
+    fromUserId:cu.id,
+    title:`📅 Daily Match Join: ${mt?.name||'Team'}`,
+    body:`Team: ${mt?.name||'—'} (${mt?.tag||'—'}) — Match: ${m?.label||m?.date||'—'}${utr?' — UTR: '+utr:''}`
+  });
+  DB.save();closeMo();showToast('✓ JOIN REQUEST SENT! ADMIN APPROVE KAREGA',false,'ok');pMatches(g('mc'));
+}
+
+// ── ADMIN: Match Details & Management ──
+function openMatchDetails(matchId){
+  const m=DB.matches.find(x=>x.id===matchId);if(!m)return;
+  const isDaily=m.matchType==='daily';
+
+  // Daily match join requests
+  const joinReqs=isDaily?DB.requests.filter(r=>r.type==='daily_join'&&r.matchId===matchId):[];
+  const pendingReqs=joinReqs.filter(r=>r.status==='pending');
+  const approvedTeamIds=joinReqs.filter(r=>r.status==='approved').map(r=>r.teamId);
+
+  let reqsHtml='';
+  if(isDaily){
+    reqsHtml=`<div style="margin-bottom:16px">
+      <div style="font-family:var(--font-mono);font-size:10px;color:var(--cyan);letter-spacing:2px;margin-bottom:8px">// JOIN REQUESTS (${joinReqs.length})</div>
+      ${joinReqs.length?joinReqs.map(r=>{
+        const team=DB.teams.find(t=>t.id===r.teamId);
+        const cap=DB.users.find(u=>u.id===r.captainId);
+        return`<div style="background:rgba(255,255,255,0.02);border:1px solid rgba(255,255,255,0.06);padding:10px 12px;border-radius:4px;margin-bottom:6px">
+          <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:6px">
+            <div>
+              <div style="font-size:13px;font-weight:700">${team?.name||'Unknown'} <span style="font-size:9px;color:var(--purple)">${team?.tag||''}</span></div>
+              <div style="font-family:var(--font-mono);font-size:9px;color:var(--muted);margin-top:2px">Cap: ${cap?.name||'—'} · 📱 ${cap?.phone||'—'}</div>
+              ${r.utr?`<div style="font-family:var(--font-mono);font-size:9px;color:var(--green);margin-top:2px">💰 UTR: ${r.utr}</div>`:`<div style="font-family:var(--font-mono);font-size:9px;color:var(--muted);margin-top:2px">No payment UTR</div>`}
+            </div>
+            <div style="display:flex;flex-direction:column;align-items:flex-end;gap:5px">
+              <span class="badge ${r.status==='approved'?'b-open':r.status==='rejected'?'b-closed':'b-ongoing'}">${r.status.toUpperCase()}</span>
+              ${r.status==='pending'?`<div style="display:flex;gap:5px">
+                <button class="btn btn-green btn-xs" onclick="approveDailyJoin('${r.id}','${matchId}')">✓ APPROVE</button>
+                <button class="btn btn-red btn-xs" onclick="rejectDailyJoin('${r.id}')">✗ REJECT</button>
+              </div>`:''}
+            </div>
+          </div>
+        </div>`;
+      }).join('')
+      :'<div style="color:var(--muted);font-family:var(--font-mono);font-size:10px">// NO JOIN REQUESTS YET</div>'}
+    </div>`;
+  } else {
+    // Tournament match — show selected teams
+    const selTeams=(m.teams||[]).map(tid=>DB.teams.find(t=>t.id===tid)).filter(Boolean);
+    reqsHtml=`<div style="margin-bottom:16px">
+      <div style="font-family:var(--font-mono);font-size:10px;color:var(--gold);letter-spacing:2px;margin-bottom:8px">// SELECTED TEAMS (${selTeams.length})</div>
+      ${selTeams.map(t=>`<div style="display:flex;justify-content:space-between;align-items:center;padding:8px 10px;background:rgba(255,255,255,0.02);border:1px solid rgba(255,255,255,0.06);border-radius:4px;margin-bottom:5px">
+        <div style="font-size:13px;font-weight:700">${t.name} <span style="font-size:9px;color:var(--purple)">${t.tag}</span></div>
+        <button class="btn btn-red btn-xs" onclick="removeTeamFromMatch('${matchId}','${t.id}')">REMOVE</button>
+      </div>`).join('')||'<div style="color:var(--muted);font-family:var(--font-mono);font-size:10px">// NO TEAMS SELECTED</div>'}
+      <button class="btn btn-gold btn-xs" style="margin-top:8px" onclick="openAddTeamsToMatch('${matchId}')">+ ADD TEAMS</button>
+    </div>`;
+  }
+
+  openMo(`<button class="mo-close" onclick="closeMo()">✕</button>
+    <div class="mo-title">⚙ MATCH DETAILS</div>
+    <div style="background:rgba(26,111,255,0.04);border:1px solid rgba(26,111,255,0.15);padding:12px;border-radius:6px;margin-bottom:14px">
+      <div style="font-size:14px;font-weight:700;letter-spacing:2px">${m.label||m.tournament||'Match'}</div>
+      <div style="font-family:var(--font-mono);font-size:10px;color:var(--muted);margin-top:4px">📅 ${m.date||'TBD'} · ⏰ ${m.time||'TBD'} · 🗺 ${m.map||'TBD'}</div>
+    </div>
+
+    ${reqsHtml}
+
+    <!-- Room Details -->
+    <div style="background:rgba(0,245,255,0.03);border:1px solid rgba(0,245,255,0.15);padding:12px;border-radius:6px;margin-bottom:14px">
+      <div style="font-family:var(--font-mono);font-size:10px;color:var(--cyan);letter-spacing:2px;margin-bottom:8px">// ROOM DETAILS</div>
+      <label class="fl">Room ID</label>
+      <input class="fi" id="md-roomid" value="${m.roomId||''}" placeholder="Room ID yahan enter karo"/>
+      <label class="fl">Room Password</label>
+      <input class="fi" id="md-roompass" value="${m.roomPass||''}" placeholder="Password yahan enter karo"/>
+      <button class="btn btn-cyan btn-sm" onclick="saveRoomDetails('${matchId}')">💾 SAVE ROOM DETAILS</button>
+    </div>
+
+    <!-- Set Result -->
+    <div style="background:rgba(255,215,0,0.03);border:1px solid rgba(255,215,0,0.15);padding:12px;border-radius:6px;margin-bottom:14px">
+      <div style="font-family:var(--font-mono);font-size:10px;color:var(--gold);letter-spacing:2px;margin-bottom:8px">// SET RESULT</div>
+      ${m.result
+        ?`<div class="result-banner"><span>🏆</span><span class="result-banner-text">WINNER: ${m.result}</span></div>
+           <button class="btn btn-ghost btn-xs" style="margin-top:8px" onclick="closeMo();openSetResult('${matchId}')">✏ CHANGE RESULT</button>`
+        :`<button class="btn btn-gold btn-sm" onclick="closeMo();openSetResult('${matchId}')">🏆 SET RESULT</button>`}
+    </div>
+
+    <!-- Status -->
+    <div style="display:flex;gap:6px;flex-wrap:wrap">
+      <button class="btn btn-green btn-xs" onclick="setMatchStatus('${matchId}','open')">OPEN</button>
+      <button class="btn btn-gold btn-xs" onclick="setMatchStatus('${matchId}','ongoing')">ONGOING</button>
+      <button class="btn btn-ghost btn-xs" onclick="setMatchStatus('${matchId}','closed')">CLOSE</button>
+    </div>`);
+}
+
+function approveDailyJoin(reqId,matchId){
+  const r=DB.requests.find(x=>x.id===reqId);
+  if(!r)return;
+  r.status='approved';
+  // Add team to match's teams array
+  const m=DB.matches.find(x=>x.id===matchId);
+  if(m){if(!m.teams)m.teams=[];if(!m.teams.includes(r.teamId))m.teams.push(r.teamId);}
+  // Notify captain
+  const team=DB.teams.find(t=>t.id===r.teamId);
+  DB.requests.push({id:'notif'+Date.now(),type:'match_result',toUserId:r.captainId,fromUserId:'admin1',status:'unread',at:Date.now(),
+    title:'✅ Daily Match Join Approved!',
+    body:`Tumhara team "${team?.name||'Team'}" match ke liye approved ho gaya! Room details matches page par dekho.`
+  });
+  DB.save();closeMo();showToast('✓ JOIN APPROVED',false,'ok');
+}
+
+function rejectDailyJoin(reqId){
+  const r=DB.requests.find(x=>x.id===reqId);
+  if(!r)return;
+  r.status='rejected';
+  const team=DB.teams.find(t=>t.id===r.teamId);
+  DB.requests.push({id:'notif'+Date.now(),type:'match_result',toUserId:r.captainId,fromUserId:'admin1',status:'unread',at:Date.now(),
+    title:'❌ Daily Match Join Rejected',
+    body:`Tumhara join request reject ho gaya. Admin se contact karo.`
+  });
+  DB.save();closeMo();showToast('REJECTED');
+}
+
+function saveRoomDetails(matchId){
+  const m=DB.matches.find(x=>x.id===matchId);if(!m)return;
+  m.roomId=(g('md-roomid')?.value||'').trim();
+  m.roomPass=(g('md-roompass')?.value||'').trim();
+  // Notify approved/selected teams
+  const teamsToNotify=m.teams||[];
+  teamsToNotify.forEach(tid=>{
+    const team=DB.teams.find(t=>t.id===tid);
+    if(team){
+      DB.requests.push({id:'notif'+Date.now()+'_'+tid,type:'room_released',toUserId:team.captainId,fromUserId:'admin1',status:'unread',at:Date.now(),
+        title:'🔐 Room Details Released!',
+        body:`Match: ${m.label||m.date||'—'} — Room ID: ${m.roomId} | Pass: ${m.roomPass}`
+      });
+    }
+  });
+  DB.save();showToast('✓ ROOM DETAILS SAVED & TEAMS NOTIFIED',false,'ok');
+}
+
+function setMatchResult(matchId){
+  const m=DB.matches.find(x=>x.id===matchId);if(!m)return;
+  const r=(g('md-result')?.value||'').trim();
+  if(!r){showToast('⚠ WINNER NAME ENTER KARO',true);return;}
+  m.result=r.toUpperCase();m.status='closed';
+  DB.save();closeMo();showToast('✓ RESULT SET',false,'ok');pMatches(g('mc'));
+}
+
+function setMatchStatus(matchId,status){
+  const m=DB.matches.find(x=>x.id===matchId);if(!m)return;
+  m.status=status;DB.save();closeMo();showToast('✓ STATUS: '+status.toUpperCase(),false,'ok');pMatches(g('mc'));
+}
+
+function removeTeamFromMatch(matchId,teamId){
+  const m=DB.matches.find(x=>x.id===matchId);if(!m)return;
+  m.teams=(m.teams||[]).filter(t=>t!==teamId);
+  DB.save();openMatchDetails(matchId);showToast('REMOVED');
+}
+
+function openAddTeamsToMatch(matchId){
+  const m=DB.matches.find(x=>x.id===matchId);if(!m)return;
+  const already=m.teams||[];
+  const available=DB.teams.filter(t=>!already.includes(t.id));
+  openMo(`<button class="mo-close" onclick="closeMo()">✕</button>
+    <div class="mo-title">+ ADD TEAMS</div>
+    <div style="max-height:300px;overflow-y:auto">
+      ${available.length?available.map(t=>`
+        <div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid rgba(255,255,255,0.04)">
+          <input type="checkbox" id="at-${t.id}" value="${t.id}" style="width:16px;height:16px;accent-color:var(--cyan)"/>
+          <label for="at-${t.id}" style="cursor:pointer;flex:1">
+            <div style="font-size:13px;font-weight:600">${t.name} <span style="font-size:9px;color:var(--purple)">${t.tag}</span></div>
+            <div style="font-family:var(--font-mono);font-size:9px;color:var(--muted)">${t.members.length} members</div>
+          </label>
+        </div>`).join('')
+      :'<div style="text-align:center;padding:20px;color:var(--muted);font-family:var(--font-mono);font-size:10px">No more teams available</div>'}
+    </div>
+    <button class="btn btn-gold btn-full" style="margin-top:12px" onclick="confirmAddTeamsToMatch('${matchId}')">+ ADD SELECTED</button>`);
+}
+
+function confirmAddTeamsToMatch(matchId){
+  const m=DB.matches.find(x=>x.id===matchId);if(!m)return;
+  const selected=[...document.querySelectorAll('[id^="at-"]:checked')].map(el=>el.value);
+  if(!selected.length){showToast('⚠ KOI TEAM SELECT NAHI KI',true);return;}
+  if(!m.teams)m.teams=[];
+  selected.forEach(tid=>{if(!m.teams.includes(tid))m.teams.push(tid);});
+  DB.save();closeMo();showToast('✓ TEAMS ADDED',false,'ok');openMatchDetails(matchId);
+}
+
+// Legacy functions kept for backward compat
+function setRes(id){setMatchResult(id);}
+function delMatch(id){if(!confirm('Delete?'))return;DB._d.matches=DB.matches.filter(x=>x.id!==id);DB.save();pMatches(g('mc'));}
+
+// ── ADMIN: Daily Join Requests in Notifications ──
+function getDailyJoinRequests(){
+  return DB.requests.filter(r=>r.type==='daily_join'&&r.status==='pending');
+}
 
 // ── ALL TEAMS (Admin) ──
 function pTeams(el){
@@ -1205,7 +1733,10 @@ function pTeams(el){
         <div class="team-badge">${team.name[0]}</div>
         <div style="flex:1"><div class="team-name-big">${team.name}</div><div class="team-tag-sm">${team.tag}</div>
         <div style="font-family:var(--font-mono);font-size:9px;color:var(--muted);margin-top:3px">CAPTAIN: ${cap?.name||'—'} (${cap?.ign||'—'})</div></div>
-        <div style="text-align:right"><div style="font-family:var(--font-hd);font-size:24px;color:var(--purple)">${members.length}<span style="font-size:11px;color:var(--muted)">/6</span></div></div>
+        <div style="text-align:right">
+          <div style="font-family:var(--font-hd);font-size:24px;color:var(--purple)">${members.length}<span style="font-size:11px;color:var(--muted)">/6</span></div>
+          <button class="btn btn-red btn-xs" style="margin-top:6px" onclick="deleteTeam('${team.id}')">🗑 DELETE TEAM</button>
+        </div>
       </div>
       ${members.map(m=>`<div class="prow"><div class="prow-l">
         <div class="av av-c">${m.name[0]}</div>
@@ -1216,7 +1747,98 @@ function pTeams(el){
     </div>`;
   });
 }
-function admRm(tid,pid){const t=DB.teams.find(x=>x.id===tid),u=DB.users.find(x=>x.id===pid);if(t){t.members=t.members.filter(i=>i!==pid);if(u)u.teamId=null;DB.save();pTeams(g('mc'));showToast('REMOVED');}}
+function admRm(tid,pid){
+  const t=DB.teams.find(x=>x.id===tid);
+  const u=DB.users.find(x=>x.id===pid);
+  if(!t||!u) return;
+
+  // If removing captain — must assign new captain first
+  if(t.captainId===pid){
+    const otherMembers=t.members.filter(id=>id!==pid).map(id=>DB.users.find(u=>u.id===id)).filter(Boolean);
+    if(!otherMembers.length){
+      // No other members — delete team
+      if(confirm('Team mein koi aur member nahi hai. Team delete kar dein?')) deleteTeam(tid);
+      return;
+    }
+    // Show new captain picker
+    openMo(`<button class="mo-close" onclick="closeMo()">✕</button>
+      <div class="mo-title">👑 NEW CAPTAIN SELECT KARO</div>
+      <div style="font-family:var(--font-mono);font-size:10px;color:var(--muted);margin-bottom:14px">
+        "${u.name}" captain hai. Remove karne se pehle naya captain choose karo.
+      </div>
+      ${otherMembers.map(m=>`
+        <div style="display:flex;justify-content:space-between;align-items:center;padding:10px 12px;background:rgba(255,255,255,0.02);border:1px solid rgba(255,255,255,0.07);border-radius:4px;margin-bottom:7px">
+          <div>
+            <div style="font-size:13px;font-weight:700">${m.name}</div>
+            <div style="font-family:var(--font-mono);font-size:9px;color:var(--muted)">IGN: ${m.ign}</div>
+          </div>
+          <button class="btn btn-gold btn-xs" onclick="assignNewCaptainAndRemove('${tid}','${pid}','${m.id}')">👑 MAKE CAPTAIN</button>
+        </div>`).join('')}
+    `);
+    return;
+  }
+
+  // Normal member remove
+  t.members=t.members.filter(i=>i!==pid);
+  u.teamId=null;
+  DB.save();pTeams(g('mc'));showToast('REMOVED');
+}
+
+function assignNewCaptainAndRemove(teamId, oldCapId, newCapId){
+  const t=DB.teams.find(x=>x.id===teamId);
+  const oldCap=DB.users.find(u=>u.id===oldCapId);
+  const newCap=DB.users.find(u=>u.id===newCapId);
+  if(!t||!newCap) return;
+
+  // Assign new captain
+  t.captainId=newCapId;
+  newCap.role='captain';
+  newCap.teamId=teamId;
+
+  // Demote old captain to player and remove from team
+  if(oldCap){ oldCap.role='player'; oldCap.teamId=null; }
+  t.members=t.members.filter(id=>id!==oldCapId);
+
+  DB.save();
+  closeMo();
+  showToast(`👑 ${newCap.name} AB CAPTAIN HAI`,false,'ok');
+  pTeams(g('mc'));
+}
+
+function deleteTeam(teamId){
+  if(!confirm('Ye team delete kar do? Sare members alag ho jayenge.')) return;
+  const team=DB.teams.find(t=>t.id===teamId);
+  if(!team) return;
+
+  // Free all members
+  team.members.forEach(uid=>{
+    const u=DB.users.find(x=>x.id===uid);
+    if(u){ u.teamId=null; }
+  });
+  // Free captain
+  const cap=DB.users.find(u=>u.id===team.captainId);
+  if(cap){ cap.teamId=null; }
+
+  // Remove team from DB
+  DB._d.teams=DB.teams.filter(t=>t.id!==teamId);
+
+  // Remove from all matches
+  (DB.matches||[]).forEach(m=>{
+    if(m.brTeamIds) m.brTeamIds=m.brTeamIds.filter(id=>id!==teamId);
+    if(m.teams) m.teams=m.teams.filter(id=>id!==teamId);
+    if(m.team1Id===teamId){ m.team1Id=null; m.team1=''; }
+    if(m.team2Id===teamId){ m.team2Id=null; m.team2=''; }
+    if(m.bannedTeams) m.bannedTeams=m.bannedTeams.filter(id=>id!==teamId);
+  });
+
+  // Remove all registrations for this team
+  DB._d.registrations=(DB.registrations||[]).filter(r=>r.teamId!==teamId);
+  DB._d.requests=(DB.requests||[]).filter(r=>r.teamId!==teamId);
+
+  DB.save();
+  showToast('🗑 TEAM DELETED — MEMBERS FREED',false,'ok');
+  pTeams(g('mc'));
+}
 
 // ── ALL PLAYERS (Admin) ──
 function pPlayers(el){
@@ -1264,6 +1886,30 @@ function pNotifications(el){
         <div class="prow-acts"><button class="btn btn-green btn-xs" onclick="approveRole('${r.id}')">APPROVE</button><button class="btn btn-red btn-xs" onclick="rejectReq('${r.id}')">REJECT</button></div></div>`;
     });
     html+=`</div>`;
+
+    // Admin: Daily match join requests
+    const dailyJoinReqs=DB.requests.filter(r=>r.type==='daily_join'&&r.status==='pending');
+    if(dailyJoinReqs.length){
+      html+=`<div class="xcard"><div class="xcard-t">📅 Daily Match Join Requests (${dailyJoinReqs.length})</div>`;
+      dailyJoinReqs.forEach(r=>{
+        const team=DB.teams.find(t=>t.id===r.teamId);
+        const cap=DB.users.find(u=>u.id===r.captainId);
+        const m=DB.matches.find(x=>x.id===r.matchId);
+        html+=`<div class="req-card">
+          <div>
+            <div class="req-from">📅 ${m?.label||m?.date||'Match'}</div>
+            <div class="req-meta">Team: ${team?.name||'—'} (${team?.tag||'—'})</div>
+            <div class="req-meta">Captain: ${cap?.name||'—'} · 📱 ${cap?.phone||'—'}</div>
+            ${r.utr?`<div class="req-meta" style="color:var(--green)">💰 UTR: ${r.utr}</div>`:`<div class="req-meta">No payment UTR</div>`}
+          </div>
+          <div class="prow-acts">
+            <button class="btn btn-green btn-xs" onclick="approveDailyJoin('${r.id}','${r.matchId}');pNotifications(g('mc'))">✓ APPROVE</button>
+            <button class="btn btn-red btn-xs" onclick="rejectDailyJoin('${r.id}');pNotifications(g('mc'))">✗ REJECT</button>
+          </div>
+        </div>`;
+      });
+      html+=`</div>`;
+    }
 
     // Admin: see all registrations with UTR
     const regsWithUTR=DB.registrations.filter(r=>r.utr);
@@ -1504,32 +2150,240 @@ function pProfile(el){
   const u=cu;
   const team=DB.teams.find(t=>t.members.includes(u.id));
   const capTeam=DB.teams.find(t=>t.captainId===u.id);
-  el.innerHTML=`<div style="animation:pageIn .35s ease"><div class="sec-hd"><div class="sec-title"><div class="sec-bar"></div>MY PROFILE</div>
-    <button class="xbtn" onclick="openEditProfile()">✏ EDIT</button></div>
+  const myTeam=capTeam||team;
+
+  // For admin: show extra stats
+  const isAdmin=u.role==='admin';
+
+  el.innerHTML=`<div style="animation:pageIn .35s ease">
+    <div class="sec-hd"><div class="sec-title"><div class="sec-bar"></div>MY PROFILE</div>
+      <button class="xbtn" onclick="openEditProfile()">✏ EDIT</button>
+    </div>
     <div class="profile-hero">
       <div class="profile-av" style="color:var(--cyan)">${u.name[0]}</div>
       <div>
-        <div class="profile-name" style="font-size:24px">${u.name}</div>
-        <div style="margin-top:8px;display:flex;gap:7px;flex-wrap:wrap;align-items:center">
+        <div class="profile-name" style="font-size:22px">${u.name}</div>
+        <div style="margin-top:6px;display:flex;gap:7px;flex-wrap:wrap;align-items:center">
           <span class="nav-role r-${u.role}" style="font-size:11px;padding:4px 12px">${u.role.toUpperCase()}</span>
-          ${u.teamId?`<span style="font-size:12px;color:#aaa">Team: ${DB.teams.find(t=>t.id===u.teamId)?.name||'—'}</span>`:`<span style="font-size:12px;color:#607d8b">No team</span>`}
+          ${myTeam?`<span style="font-size:12px;color:#aaa">${capTeam?'👑 Captain':'🛡 '+team.name}</span>`:`<span style="font-size:12px;color:#607d8b">No team</span>`}
         </div>
       </div>
     </div>
-    <div class="xcard">
-      <div class="info-row"><span class="info-lbl">📱 Phone</span><span style="font-family:var(--font-mono)">${u.phone}</span></div>
-      <div class="info-row"><span class="info-lbl">🎮 FF UID</span><span style="color:var(--cyan);font-family:var(--font-mono)">${u.uid}</span></div>
-      <div class="info-row"><span class="info-lbl">⚡ IGN</span><span style="color:var(--gold);font-weight:600">${u.ign}</span></div>
-      <div class="info-row"><span class="info-lbl">🛡 Team</span><span>${capTeam?capTeam.name+' (Captain)':team?team.name:'No team'}</span></div>
-      <div class="info-row"><span class="info-lbl">🔑 Team Code</span><span style="font-family:var(--font-mono);color:var(--gold);letter-spacing:2px">${(capTeam||team)?.code||'—'}</span></div>
-    </div>
-    <div class="xcard">
-      <div class="xcard-t">🔄 Switch Role</div>
-      <p style="color:var(--muted);font-size:13px;margin-bottom:10px">You can request to become Captain or switch roles.</p>
-      <button class="btn btn-purple btn-sm" onclick="nav('notifications')">» MANAGE ROLE & REQUESTS</button>
-    </div>
+
+    ${isAdmin ? renderAdminDailyPanel() : renderPlayerDailyPanel(myTeam, u)}
+
     <div style="text-align:center;padding:16px;font-family:var(--font-mono);font-size:8px;color:rgba(0,245,255,0.15);letter-spacing:4px">ZONE X ESPORTS // ONE TOURNAMENT ONE CHAMPION</div>
   </div>`;
+}
+
+// ── PLAYER / CAPTAIN: Daily Matches panel (no Info tab) ──
+function renderPlayerDailyPanel(myTeam, u){
+  const dailyMatches=DB.matches.filter(m=>m.matchType==='DAILY'||m.matchType==='daily');
+  const isCap=myTeam&&myTeam.captainId===u.id;
+
+  // Split into: available (open, not joined) and registered (joined/approved)
+  const available=[], registered=[];
+  dailyMatches.slice().reverse().forEach(m=>{
+    const req=myTeam?DB.requests.find(r=>r.type==='daily_join'&&r.matchId===m.id&&r.teamId===myTeam.id):null;
+    if(req) registered.push({m,req});
+    else available.push(m);
+  });
+
+  let html=`<div class="page-tabs" style="margin-bottom:16px">
+    <button class="page-tab active" id="ptab-avail" onclick="switchProfileTab('avail')">📅 AVAILABLE</button>
+    <button class="page-tab" id="ptab-reg" onclick="switchProfileTab('reg')">✅ REGISTERED</button>
+  </div>`;
+
+  // Available tab
+  html+=`<div id="profile-panel-avail">`;
+  if(!available.length){
+    html+=`<div style="text-align:center;padding:40px;color:var(--muted);font-family:var(--font-mono);font-size:10px;letter-spacing:2px">// NO OPEN DAILY MATCHES</div>`;
+  } else {
+    available.forEach(m=>{
+      const isBanned=myTeam&&(m.bannedTeams||[]).includes(myTeam.id);
+      const isClosed=m.status==='closed'||m.status==='completed';
+      const full=m.maxTeams&&(m.brTeamIds||[]).length>=(m.maxTeams||12);
+      html+=`<div class="xcard" style="border-left:3px solid ${isBanned?'var(--red)':isClosed||full?'var(--muted2)':'var(--green)'};margin-bottom:10px">
+        <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:6px;flex-wrap:wrap">
+          <div>
+            <div style="font-family:var(--font-hd);font-size:14px;letter-spacing:2px;color:var(--green)">${m.label||m.round||'Daily Match'}</div>
+            <div style="font-family:var(--font-mono);font-size:10px;color:var(--muted);margin-top:3px;line-height:1.8">
+              📅 ${m.date||'TBD'} &nbsp;⏰ ${m.time||'TBD'}
+              ${m.gameMode?`&nbsp;🎮 ${m.gameMode}`:''} ${m.matchFormat?`· ${m.matchFormat}`:''}
+              ${m.entry?`<br>💰 Entry: <span style="color:var(--gold)">${m.entry}</span>`:''}
+              ${m.prize?`&nbsp;🏆 Prize: <span style="color:var(--gold)">${m.prize}</span>`:''}
+              ${m.maxTeams?`<br>👥 Slots: ${(m.brTeamIds||[]).length}/${m.maxTeams}`:''}
+            </div>
+          </div>
+          <span class="badge ${m.status==='open'?'b-open':m.status==='ongoing'?'b-ongoing':'b-closed'}">${(m.status||'open').toUpperCase()}</span>
+        </div>
+        ${isBanned?`<div style="margin-top:8px;font-family:var(--font-mono);font-size:10px;color:var(--red)">🚫 YOUR TEAM IS BANNED FROM THIS MATCH</div>`
+          :isClosed?`<div style="margin-top:8px;font-family:var(--font-mono);font-size:10px;color:var(--muted)">// MATCH CLOSED</div>`
+          :full?`<div style="margin-top:8px;font-family:var(--font-mono);font-size:10px;color:var(--muted)">// SLOTS FULL</div>`
+          :isCap?`<button class="btn btn-green btn-xs" style="margin-top:8px" onclick="openDailyJoin('${m.id}');setTimeout(()=>nav('matches'),500)">⚡ JOIN MATCH</button>`
+          :`<div style="margin-top:8px;font-family:var(--font-mono);font-size:10px;color:var(--muted)">// CAPTAIN CAN JOIN</div>`}
+      </div>`;
+    });
+  }
+  html+=`</div>`;
+
+  // Registered tab
+  html+=`<div id="profile-panel-reg" style="display:none">`;
+  if(!registered.length){
+    html+=`<div style="text-align:center;padding:40px;color:var(--muted);font-family:var(--font-mono);font-size:10px;letter-spacing:2px">// NO REGISTERED MATCHES</div>`;
+  } else {
+    registered.forEach(({m,req})=>{
+      const approved=req.status==='approved';
+      const roomAvail=approved&&m.roomReleased;
+      html+=`<div class="xcard" style="border-left:3px solid ${approved?'var(--cyan)':req.status==='rejected'?'var(--red)':'var(--gold)'};margin-bottom:10px">
+        <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:6px;flex-wrap:wrap">
+          <div>
+            <div style="font-family:var(--font-hd);font-size:14px;letter-spacing:2px;color:var(--cyan)">${m.label||m.round||'Daily Match'}</div>
+            <div style="font-family:var(--font-mono);font-size:10px;color:var(--muted);margin-top:3px;line-height:1.8">
+              📅 ${m.date||'TBD'} &nbsp;⏰ ${m.time||'TBD'}
+              ${m.entry?`<br>💰 Entry: <span style="color:var(--gold)">${m.entry}</span>`:''}
+              ${m.prize?`&nbsp;🏆 Prize: <span style="color:var(--gold)">${m.prize}</span>`:''}
+            </div>
+          </div>
+          <div style="display:flex;flex-direction:column;gap:4px;align-items:flex-end">
+            <span class="badge ${m.status==='open'?'b-open':m.status==='ongoing'?'b-ongoing':'b-closed'}">${(m.status||'open').toUpperCase()}</span>
+            <span class="badge ${req.status==='approved'?'b-open':req.status==='rejected'?'b-closed':'b-ongoing'}">${req.status==='approved'?'✓ APPROVED':req.status==='rejected'?'✗ REJECTED':'⏳ PENDING'}</span>
+          </div>
+        </div>
+        ${roomAvail?`<div class="room-unlocked" style="margin-top:10px">
+          <div style="display:flex;gap:16px;flex-wrap:wrap">
+            <div><div class="room-lbl">🔓 ROOM ID</div><div class="room-id-val">${m.roomId||'—'}</div></div>
+            <div><div class="room-lbl">🔑 PASSWORD</div><div class="room-pw-val">${m.roomPass||'—'}</div></div>
+          </div></div>`
+        :approved?`<div style="margin-top:8px;font-family:var(--font-mono);font-size:10px;color:var(--muted)">⏳ Room will be released before match</div>`:''}
+        ${m.result?`<div class="result-banner" style="margin-top:8px"><span>🏆</span><span class="result-banner-text">WINNER: ${m.result}</span></div>`:''}
+      </div>`;
+    });
+  }
+  html+=`</div>`;
+  return html;
+}
+
+function switchProfileTab(tab){
+  // Available / Registered tabs
+  if(g('ptab-avail')){
+    g('ptab-avail').className='page-tab'+(tab==='avail'?' active':'');
+    g('ptab-reg').className='page-tab'+(tab==='reg'?' active':'');
+    if(g('profile-panel-avail')) g('profile-panel-avail').style.display=tab==='avail'?'block':'none';
+    if(g('profile-panel-reg')) g('profile-panel-reg').style.display=tab==='reg'?'block':'none';
+  }
+}
+
+// ── ADMIN: Daily Matches panel ──
+function renderAdminDailyPanel(){
+  const dailyMatches=DB.matches.filter(m=>m.matchType==='DAILY'||m.matchType==='daily');
+
+  let html=`<div style="margin-bottom:10px;display:flex;justify-content:space-between;align-items:center">
+    <div style="font-family:var(--font-mono);font-size:10px;color:var(--cyan);letter-spacing:2px">📅 DAILY MATCHES (${dailyMatches.length})</div>
+    <button class="btn btn-green btn-xs" onclick="openCreateMatch();setTimeout(()=>pickMatchType('DAILY'),100)">+ NEW DAILY</button>
+  </div>`;
+
+  if(!dailyMatches.length){
+    return html+`<div style="text-align:center;padding:40px;color:var(--muted);font-family:var(--font-mono);font-size:10px;letter-spacing:2px">// NO DAILY MATCHES YET</div>`;
+  }
+
+  dailyMatches.slice().reverse().forEach(m=>{
+    const joinReqs=DB.requests.filter(r=>r.type==='daily_join'&&r.matchId===m.id);
+    const approvedCount=joinReqs.filter(r=>r.status==='approved').length;
+    const pendingCount=joinReqs.filter(r=>r.status==='pending').length;
+    const maxTeams=m.maxTeams||12;
+    const bannedCount=(m.bannedTeams||[]).length;
+
+    html+=`<div class="xcard" style="border-left:3px solid var(--green);margin-bottom:10px">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:6px">
+        <div>
+          <div style="font-family:var(--font-hd);font-size:14px;letter-spacing:2px;color:var(--green)">${m.label||m.round||'Daily Match'}</div>
+          <div style="font-family:var(--font-mono);font-size:10px;color:var(--muted);margin-top:3px;line-height:1.8">
+            📅 ${m.date||'TBD'} &nbsp;⏰ ${m.time||'TBD'}
+            ${m.entry?`<br>💰 Entry: ${m.entry}`:''}
+            ${m.prize?`&nbsp;🏆 Prize: ${m.prize}`:''}
+            <br>👥 Slots: <span style="color:var(--cyan)">${approvedCount}/${maxTeams}</span>
+            &nbsp;⏳ Pending: <span style="color:var(--gold)">${pendingCount}</span>
+            ${bannedCount?`&nbsp;🚫 Banned: <span style="color:var(--red)">${bannedCount}</span>`:''}
+          </div>
+        </div>
+        <span class="badge ${m.status==='open'?'b-open':m.status==='ongoing'?'b-ongoing':'b-closed'}">${(m.status||'open').toUpperCase()}</span>
+      </div>
+      <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:10px">
+        <button class="btn btn-cyan btn-xs" onclick="adminDailyManage('${m.id}')">⚙ MANAGE</button>
+        <button class="btn btn-red btn-xs" onclick="adminDailyBanMenu('${m.id}')">🚫 BAN TEAM</button>
+        <button class="btn btn-ghost btn-xs" onclick="delMatch('${m.id}');pProfile(g('mc'))">DEL</button>
+      </div>
+    </div>`;
+  });
+  return html;
+}
+
+// Admin: manage daily match (room, result, status)
+function adminDailyManage(matchId){ openMatchDetails(matchId); }
+
+// Admin: ban team from a specific daily match
+function adminDailyBanMenu(matchId){
+  const m=DB.matches.find(x=>x.id===matchId);if(!m)return;
+  if(!m.bannedTeams)m.bannedTeams=[];
+  const joinedTeamIds=(m.brTeamIds||[]);
+  const allTeams=DB.teams;
+
+  openMo(`<button class="mo-close" onclick="closeMo()">✕</button>
+    <div class="mo-title">🚫 BAN TEAM FROM MATCH</div>
+    <div style="font-family:var(--font-mono);font-size:10px;color:var(--muted);margin-bottom:12px">${m.label||m.date||'Daily Match'}</div>
+    <div style="font-family:var(--font-mono);font-size:9px;color:var(--cyan);letter-spacing:2px;margin-bottom:8px">// SELECT TEAM TO BAN</div>
+    <div style="max-height:280px;overflow-y:auto">
+      ${allTeams.map(t=>{
+        const isBanned=(m.bannedTeams||[]).includes(t.id);
+        return`<div style="display:flex;justify-content:space-between;align-items:center;padding:9px 10px;background:rgba(255,255,255,0.02);border:1px solid rgba(255,255,255,0.06);border-radius:4px;margin-bottom:5px">
+          <div>
+            <div style="font-size:13px;font-weight:700">${t.name} <span style="font-size:9px;color:var(--purple)">${t.tag}</span></div>
+            <div style="font-family:var(--font-mono);font-size:9px;color:var(--muted)">${t.members.length} members</div>
+          </div>
+          ${isBanned
+            ?`<button class="btn btn-green btn-xs" onclick="unbanTeamFromMatch('${m.id}','${t.id}')">✓ UNBAN</button>`
+            :`<button class="btn btn-red btn-xs" onclick="banTeamFromMatch('${m.id}','${t.id}')">🚫 BAN</button>`}
+        </div>`;
+      }).join('')}
+    </div>`);
+}
+
+function banTeamFromMatch(matchId, teamId){
+  const m=DB.matches.find(x=>x.id===matchId);if(!m)return;
+  if(!m.bannedTeams)m.bannedTeams=[];
+  if(!m.bannedTeams.includes(teamId)) m.bannedTeams.push(teamId);
+  // Remove from approved list too
+  m.brTeamIds=(m.brTeamIds||[]).filter(id=>id!==teamId);
+  // Reject their join request
+  DB.requests.filter(r=>r.type==='daily_join'&&r.matchId===matchId&&r.teamId===teamId).forEach(r=>r.status='rejected');
+  // Notify captain
+  const team=DB.teams.find(t=>t.id===teamId);
+  if(team){
+    DB.requests.push({id:'notif'+Date.now(),type:'match_result',toUserId:team.captainId,fromUserId:'admin1',status:'unread',at:Date.now(),
+      title:'🚫 Banned from Daily Match',
+      body:`Tumhari team "${team.name}" ko "${m.label||m.date||'Daily Match'}" se ban kar diya gaya. Aaj ke saare daily matches ke liye ban applicable hai.`
+    });
+  }
+  // Ban from ALL today's daily matches
+  const matchDate=m.date;
+  DB.matches.filter(x=>(x.matchType==='DAILY'||x.matchType==='daily')&&x.date===matchDate&&x.id!==matchId).forEach(otherMatch=>{
+    if(!otherMatch.bannedTeams)otherMatch.bannedTeams=[];
+    if(!otherMatch.bannedTeams.includes(teamId)) otherMatch.bannedTeams.push(teamId);
+    otherMatch.brTeamIds=(otherMatch.brTeamIds||[]).filter(id=>id!==teamId);
+  });
+  DB.save();showToast(`🚫 ${team?.name||'TEAM'} BANNED FOR TODAY`,true);adminDailyBanMenu(matchId);
+}
+
+function unbanTeamFromMatch(matchId, teamId){
+  const m=DB.matches.find(x=>x.id===matchId);if(!m)return;
+  m.bannedTeams=(m.bannedTeams||[]).filter(id=>id!==teamId);
+  // Unban from today's other matches too
+  const matchDate=m.date;
+  DB.matches.filter(x=>(x.matchType==='DAILY'||x.matchType==='daily')&&x.date===matchDate&&x.id!==matchId).forEach(otherMatch=>{
+    otherMatch.bannedTeams=(otherMatch.bannedTeams||[]).filter(id=>id!==teamId);
+  });
+  DB.save();showToast('✓ UNBANNED',false,'ok');adminDailyBanMenu(matchId);
 }
 function openEditProfile(){const u=cu;openMo(`<button class="mo-close" onclick="closeMo()">✕</button><div class="mo-title">✏ EDIT PROFILE</div><label class="fl">Full Name</label><input class="fi" id="ep-n" value="${u.name}"/><label class="fl">In-Game Name</label><input class="fi" id="ep-i" value="${u.ign}"/><label class="fl">Free Fire UID</label><input class="fi" id="ep-u" value="${u.uid}"/><label class="fl">New Password (blank = keep)</label><input class="fi" type="password" id="ep-w" placeholder="New password"/><div class="err-msg" id="ep-e"></div><button class="btn btn-cyan btn-full" onclick="saveProfile()">⚡ SAVE</button>`);}
 function saveProfile(){const n=v('ep-n'),i=v('ep-i'),u=v('ep-u'),w=v('ep-w');if(!n||!i||!u){set('ep-e','⚠ REQUIRED FIELDS');return;}cu.name=n;cu.ign=i;cu.uid=u;if(w)cu.password=w;DB.save();closeMo();showToast('✓ PROFILE UPDATED',false,'ok');g('nav-nm').textContent=cu.name;pProfile(g('mc'));}
@@ -2153,12 +3007,21 @@ function doChangeAdminPw(){
 // MATCH MANAGER — BR + CS
 // ════════════════════════════════════════
 
-function pMatches(el){
+function pMatches(el){ pMatches_OLD(el); }
+
+function pMatches_OLD(el){
   // Get tournaments + seasons
   const allContainers=[
     ...DB.tournaments.map(t=>({...t,containerType:'tournament'})),
     ...DB.seasons.map(s=>({...s,containerType:'season'}))
   ];
+
+  // ── DAILY matches: show in profile, NOT here ──
+  // Admin: exclude daily from this page
+  // Captain/Player: show only their tournament matches here (daily = profile page)
+  const nonDailyMatches=(DB.matches||[]).filter(m=>
+    m.matchType!=='DAILY'&&m.matchType!=='daily'&&m.matchType!=='daily_match'
+  );
 
   let html=`<div style="animation:pageIn .35s ease">
     <div class="sec-hd">
@@ -2166,14 +3029,14 @@ function pMatches(el){
       ${cu.role==='admin'?`<button class="btn btn-cyan btn-sm" onclick="openCreateMatch()">+ NEW MATCH</button>`:''}
     </div>`;
 
-  if(!DB.matches||!DB.matches.length){
+  if(!nonDailyMatches.length){
     html+=`<div style="text-align:center;padding:50px;color:var(--muted);font-family:var(--font-mono);font-size:10px;letter-spacing:2px">// NO MATCHES CREATED YET<br><br>${cu.role==='admin'?'Click + NEW MATCH to create one':'Admin will schedule matches soon'}</div>`;
     el.innerHTML=html+'</div>';return;
   }
 
   // Group matches by tournament/season
   const grouped={};
-  DB.matches.forEach(m=>{
+  nonDailyMatches.forEach(m=>{
     const key=m.containerId||'general';
     if(!grouped[key])grouped[key]=[];
     grouped[key].push(m);
@@ -2182,6 +3045,21 @@ function pMatches(el){
   // For captain/player — show only their matches
   const myTeam=DB.teams.find(t=>t.captainId===cu.id||t.members.includes(cu.id));
 
+  // Captain/Player: also show daily matches they've registered for
+  if(cu.role!=='admin' && myTeam){
+    const myDailyMatches=(DB.matches||[]).filter(m=>{
+      const isD=m.matchType==='DAILY'||m.matchType==='daily';
+      if(!isD) return false;
+      return DB.requests.some(r=>r.type==='daily_join'&&r.matchId===m.id&&r.teamId===myTeam.id&&r.status==='approved');
+    });
+    if(myDailyMatches.length){
+      html+=`<div class="xcard" style="margin-bottom:18px">
+        <div style="font-family:var(--font-hd);font-size:13px;letter-spacing:2px;color:var(--green);margin-bottom:14px">📅 MY DAILY MATCHES</div>`;
+      myDailyMatches.forEach(m=>{ html+=renderMatchBlock(m, cu.role, myTeam); });
+      html+=`</div>`;
+    }
+  }
+
   Object.keys(grouped).forEach(key=>{
     const groupMatches=grouped[key];
     const container=allContainers.find(c=>c.id===key);
@@ -2189,7 +3067,7 @@ function pMatches(el){
 
     // filter for non-admin
     const visibleMatches = cu.role==='admin' ? groupMatches :
-      groupMatches.filter(m=> myTeam && (m.team1Id===myTeam.id || m.team2Id===myTeam.id));
+      groupMatches.filter(m=> myTeam && (m.team1Id===myTeam.id || m.team2Id===myTeam.id || (m.brTeamIds||[]).includes(myTeam.id)));
 
     if(visibleMatches.length===0 && cu.role!=='admin') return;
 
@@ -2219,9 +3097,13 @@ function pMatches(el){
 function renderMatchBlock(m, role, myTeam){
   const t1=DB.teams.find(x=>x.id===m.team1Id);
   const t2=DB.teams.find(x=>x.id===m.team2Id);
-  const isMyMatch=myTeam&&(m.team1Id===myTeam.id||m.team2Id===myTeam.id);
-  const accentColor = m.result ? 'var(--gold)' : m.roomReleased ? 'var(--green)' : 'var(--muted2)';
   const isBR = m.matchType==='BR';
+  const isDaily = m.matchType==='DAILY';
+  const isMyMatch=myTeam&&!isDaily&&(m.team1Id===myTeam.id||m.team2Id===myTeam.id||(m.brTeamIds||[]).includes(myTeam.id));
+  const accentColor = m.result ? 'var(--gold)' : m.roomReleased ? 'var(--green)' : isDaily ? 'var(--green)' : 'var(--muted2)';
+  const typeBadgeClass = isBR?'mt-br':isDaily?'mt-daily':'mt-cs';
+  const typeBadgeLabel = isBR?'🎯 BATTLE ROYALE':isDaily?'📅 DAILY MATCH':'⚔ CS STYLE';
+  const isMultiTeam = isBR;
 
   let roomSection='';
   if(role==='admin'){
@@ -2232,30 +3114,45 @@ function renderMatchBlock(m, role, myTeam){
            <button class="btn btn-red btn-xs" onclick="toggleRoom('${m.id}',false)">🔒 LOCK</button>`
         :`<div style="font-family:var(--font-mono);font-size:10px;color:var(--muted)">Room: <span style="color:var(--red)">🔒 LOCKED</span></div>
           <button class="btn btn-green btn-xs" onclick="toggleRoom('${m.id}',true)">🔓 RELEASE</button>`}
+      ${isDaily?`<button class="btn btn-cyan btn-xs" onclick="openDailyJoinRequests('${m.id}')">📋 JOIN REQUESTS</button>`:''}
       ${!m.result?`<button class="btn btn-gold btn-xs" onclick="openSetResult('${m.id}')">SET RESULT</button>`:''}
       <button class="btn btn-ghost btn-xs" onclick="openEditMatch('${m.id}')">✏ EDIT</button>
       <button class="btn btn-red btn-xs" onclick="deleteMatch2('${m.id}')">DEL</button>
     </div>`;
+  } else if(isDaily){
+    // Daily match — show join button or status for captain
+    const mt=myTeam;
+    if(mt&&mt.captainId===cu.id){
+      const existReq=DB.requests.find(r=>r.type==='daily_join'&&r.matchId===m.id&&r.teamId===mt.id);
+      if(existReq){
+        const statusMap={pending:'⏳ JOIN REQUEST PENDING',approved:'✓ APPROVED — Room details mein dekho',rejected:'✗ REJECTED — Admin se contact karo'};
+        const badgeMap={pending:'b-ongoing',approved:'b-open',rejected:'b-closed'};
+        roomSection=`<div style="padding:0 16px 12px"><span class="badge ${badgeMap[existReq.status]||'b-ongoing'}">${statusMap[existReq.status]||existReq.status}</span></div>`;
+        if(existReq.status==='approved'&&m.roomReleased){
+          roomSection+=`<div class="room-unlocked" style="margin:0 16px 12px">
+            <div style="display:flex;gap:20px;flex-wrap:wrap">
+              <div><div class="room-lbl">🔓 ROOM ID</div><div class="room-id-val">${m.roomId||'—'}</div></div>
+              <div><div class="room-lbl">🔑 PASSWORD</div><div class="room-pw-val">${m.roomPass||'—'}</div></div>
+            </div></div>`;
+        }
+      } else if(!m.result){
+        roomSection=`<div style="padding:0 16px 12px"><button class="btn btn-green btn-sm" onclick="openDailyJoin('${m.id}')">⚡ JOIN MATCH</button></div>`;
+      }
+    }
   } else if(isMyMatch){
     if(m.roomReleased){
-      // Only show room to members of the actual match teams (not other teams)
-      const isInThisMatch=myTeam&&(m.team1Id===myTeam.id||m.team2Id===myTeam.id);
+      const isInThisMatch=myTeam&&(m.team1Id===myTeam.id||m.team2Id===myTeam.id||(m.brTeamIds||[]).includes(myTeam.id));
       const isCaptain=myTeam&&myTeam.captainId===cu.id&&isInThisMatch;
       if(isCaptain&&isInThisMatch){
         roomSection=`<div class="room-unlocked" style="margin:0 16px 12px">
           <div style="display:flex;gap:20px;flex-wrap:wrap">
             <div><div class="room-lbl">🔓 ROOM ID</div><div class="room-id-val">${m.roomId||'—'}</div></div>
             <div><div class="room-lbl">🔑 PASSWORD</div><div class="room-pw-val">${m.roomPass||'—'}</div></div>
-          </div>
-          <div style="font-size:11px;color:#00e676;margin-top:6px;font-family:'Roboto Mono',monospace">✓ Check your notifications — Room details sent to your number</div>
-        </div>`;
+          </div></div>`;
       } else if(isInThisMatch){
         roomSection=`<div class="room-unlocked" style="margin:0 16px 12px">
-          <div style="font-family:'Roboto Mono',monospace;font-size:10px;color:#00e676;">🔓 Room released — Check your notifications for Room ID & Password</div>
+          <div style="font-family:'Roboto Mono',monospace;font-size:10px;color:#00e676;">🔓 Room released — Notifications check karo</div>
         </div>`;
-      } else {
-        // Team not in this match — show nothing about room
-        roomSection='';
       }
     } else {
       roomSection=`<div class="room-locked" style="margin:0 16px 12px">
@@ -2266,7 +3163,7 @@ function renderMatchBlock(m, role, myTeam){
 
   let resultSection='';
   if(m.result){
-    if(isBR && m.brScores && m.brScores.length){
+    if((isBR||isDaily) && m.brScores && m.brScores.length){
       resultSection=`<div style="padding:0 16px 14px">
         <div style="font-family:var(--font-mono);font-size:9px;color:var(--gold);letter-spacing:2px;margin-bottom:6px">// FINAL STANDINGS</div>
         <table class="br-score-table">
@@ -2286,6 +3183,25 @@ function renderMatchBlock(m, role, myTeam){
     }
   }
 
+  // Daily match — show entry/prize info instead of VS teams
+  const teamsRow = isDaily
+    ? `<div style="padding:8px 16px 10px;display:flex;gap:16px;flex-wrap:wrap">
+        ${m.entry?`<div><div class="room-lbl">💰 Entry</div><div style="font-size:13px;font-weight:600;color:var(--gold)">${m.entry}</div></div>`:''}
+        ${m.prize?`<div><div class="room-lbl">🏆 Prize</div><div style="font-size:13px;font-weight:600;color:var(--gold)">${m.prize}</div></div>`:''}
+        ${(m.brTeamIds||[]).length?`<div><div class="room-lbl">👥 Teams Joined</div><div style="font-size:13px;font-weight:600;color:var(--cyan)">${(m.brTeamIds||[]).length}</div></div>`:''}
+      </div>`
+    : `<div class="match-teams-row">
+        <div class="match-team-box${m.result===t1?.name?' winner':''}">
+          <div class="match-team-name">${t1?.name||m.team1||'TBD'}</div>
+          <div class="match-team-tag">${t1?.tag||''}${isMultiTeam&&(m.brTeamIds||[]).length>2?` +${(m.brTeamIds||[]).length-2} more`:''}</div>
+        </div>
+        <div class="match-vs-badge">VS</div>
+        <div class="match-team-box right${m.result===t2?.name?' winner':''}">
+          <div class="match-team-name">${t2?.name||m.team2||'TBD'}</div>
+          <div class="match-team-tag">${t2?.tag||''}</div>
+        </div>
+      </div>`;
+
   return `<div class="match-block" style="${isMyMatch&&role!=='admin'?'border-color:rgba(0,245,255,0.25);':''}" >
     <div class="match-block-accent" style="background:${accentColor}"></div>
     <div class="match-top">
@@ -2296,22 +3212,49 @@ function renderMatchBlock(m, role, myTeam){
         <span style="font-size:15px;font-weight:600;color:#ffc107">⏰ ${m.time||'TBD'}</span>
         ${isMyMatch&&role!=='admin'?`<span style="font-size:11px;font-weight:700;color:#00b4ff;background:rgba(0,180,255,0.1);border:1px solid rgba(0,180,255,0.3);padding:3px 10px;border-radius:3px;letter-spacing:1px">YOUR MATCH</span>`:''}
       </div>
-      <span class="match-type-badge ${m.matchType==='BR'?'mt-br':'mt-cs'}">${m.matchType==='BR'?'🎯 BATTLE ROYALE':'⚔ CS STYLE'}</span>
-    </div>
-    <div class="match-teams-row">
-      <div class="match-team-box${m.result===t1?.name?' winner':''}">
-        <div class="match-team-name">${t1?.name||m.team1||'TBD'}</div>
-        <div class="match-team-tag">${t1?.tag||''}</div>
-      </div>
-      <div class="match-vs-badge">VS</div>
-      <div class="match-team-box right${m.result===t2?.name?' winner':''}">
-        <div class="match-team-name">${t2?.name||m.team2||'TBD'}</div>
-        <div class="match-team-tag">${t2?.tag||''}</div>
+      <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
+        <span class="match-type-badge ${typeBadgeClass}">${typeBadgeLabel}</span>
+        ${m.matchFormat&&!isDaily?`<span style="font-family:var(--font-mono);font-size:8px;color:var(--muted);border:1px solid rgba(255,255,255,0.1);padding:2px 7px;border-radius:3px;letter-spacing:1px">${m.matchFormat}</span>`:''}
       </div>
     </div>
+    ${teamsRow}
     ${roomSection}
     ${resultSection}
   </div>`;
+}
+
+// Admin: view all daily join requests for a match
+function openDailyJoinRequests(matchId){
+  const m=DB.matches.find(x=>x.id===matchId);if(!m)return;
+  const joinReqs=DB.requests.filter(r=>r.type==='daily_join'&&r.matchId===matchId);
+  let html=`<button class="mo-close" onclick="closeMo()">✕</button>
+    <div class="mo-title">📋 JOIN REQUESTS</div>
+    <div style="font-family:var(--font-mono);font-size:10px;color:var(--muted);margin-bottom:12px">${m.round||'Daily Match'} · ${m.date||'TBD'}</div>`;
+  if(!joinReqs.length){
+    html+=`<div style="text-align:center;padding:20px;color:var(--muted);font-family:var(--font-mono);font-size:10px">// NO JOIN REQUESTS YET</div>`;
+  } else {
+    joinReqs.forEach(r=>{
+      const team=DB.teams.find(t=>t.id===r.teamId);
+      const cap=DB.users.find(u=>u.id===r.captainId);
+      html+=`<div style="background:rgba(255,255,255,0.02);border:1px solid rgba(255,255,255,0.06);padding:10px 12px;border-radius:4px;margin-bottom:7px">
+        <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:6px">
+          <div>
+            <div style="font-size:13px;font-weight:700">${team?.name||'Unknown'} <span style="font-size:9px;color:var(--purple)">${team?.tag||''}</span></div>
+            <div style="font-family:var(--font-mono);font-size:9px;color:var(--muted);margin-top:2px">Cap: ${cap?.name||'—'} · 📱 ${cap?.phone||'—'}</div>
+            ${r.utr?`<div style="font-family:var(--font-mono);font-size:9px;color:var(--green);margin-top:2px">💰 UTR: ${r.utr}</div>`:`<div style="font-family:var(--font-mono);font-size:9px;color:var(--muted)">No payment UTR</div>`}
+          </div>
+          <div style="display:flex;flex-direction:column;align-items:flex-end;gap:5px">
+            <span class="badge ${r.status==='approved'?'b-open':r.status==='rejected'?'b-closed':'b-ongoing'}">${r.status.toUpperCase()}</span>
+            ${r.status==='pending'?`<div style="display:flex;gap:5px">
+              <button class="btn btn-green btn-xs" onclick="approveDailyJoin('${r.id}','${matchId}');openDailyJoinRequests('${matchId}')">✓</button>
+              <button class="btn btn-red btn-xs" onclick="rejectDailyJoin('${r.id}');openDailyJoinRequests('${matchId}')">✗</button>
+            </div>`:''}
+          </div>
+        </div>
+      </div>`;
+    });
+  }
+  openMo(html);
 }
 
 // ── CREATE MATCH MODAL ──
@@ -2319,56 +3262,115 @@ function openCreateMatch(){
   const tournaments=DB.tournaments;
   const seasons=DB.seasons;
   const teams=DB.teams;
+  const defaultQr=DB._d.settings?.defaultQr||'';
 
   openMo(`<button class="mo-close" onclick="closeMo()">✕</button>
     <div class="mo-title">+ NEW MATCH</div>
 
+    <!-- 1. Match Type -->
     <label class="fl">Match Type</label>
-    <div style="display:flex;gap:10px;margin-bottom:13px">
-      <div class="role-opt sel-ply" id="mt-br" onclick="pickMatchType('BR')" style="flex:1">
+    <div style="display:flex;gap:8px;margin-bottom:13px">
+      <div class="role-opt sel-ply" id="mt-daily" onclick="pickMatchType('DAILY')" style="flex:1;padding:10px 6px">
+        <span class="role-opt-icon">📅</span><span class="role-opt-lbl">Daily Match</span>
+      </div>
+      <div class="role-opt" id="mt-tour" onclick="pickMatchType('TOUR')" style="flex:1;padding:10px 6px">
+        <span class="role-opt-icon">🏆</span><span class="role-opt-lbl">Tournament</span>
+      </div>
+    </div>
+    <input type="hidden" id="nm-type" value="DAILY"/>
+
+    <!-- 2. Game Mode: BR / CS -->
+    <label class="fl">Game Mode</label>
+    <div style="display:flex;gap:8px;margin-bottom:13px">
+      <div class="role-opt sel-ply" id="gm-br" onclick="pickGameMode('BR')" style="flex:1;padding:10px 6px">
         <span class="role-opt-icon">🎯</span><span class="role-opt-lbl">Battle Royale</span>
       </div>
-      <div class="role-opt" id="mt-cs" onclick="pickMatchType('CS')" style="flex:1">
+      <div class="role-opt" id="gm-cs" onclick="pickGameMode('CS')" style="flex:1;padding:10px 6px">
         <span class="role-opt-icon">⚔</span><span class="role-opt-lbl">CS Style</span>
       </div>
     </div>
-    <input type="hidden" id="nm-type" value="BR"/>
+    <input type="hidden" id="nm-gamemode" value="BR"/>
 
-    <label class="fl">Tournament / Season</label>
-    <select class="fi" id="nm-container" onchange="onMatchContainerChange()">
-      <option value="">-- Select Tournament or Season --</option>
-      ${tournaments.map(t=>`<option value="${t.id}">[TOUR] ${t.name}</option>`).join('')}
-      ${seasons.map(s=>`<option value="${s.id}">[SEASON] ${s.name}</option>`).join('')}
-    </select>
-    <div id="nm-container-warn" style="display:none;font-family:var(--font-mono);font-size:9px;color:var(--gold);letter-spacing:1px;margin:-8px 0 10px;padding:6px 10px;background:rgba(255,193,7,0.06);border:1px solid rgba(255,193,7,0.15);border-radius:3px">
-      ⚠ No registrations found for this container. Showing all teams.
+    <!-- 3. Squad Format -->
+    <label class="fl">Squad Format</label>
+    <div style="display:flex;gap:8px;margin-bottom:13px">
+      <div class="role-opt sel-ply" id="fmt-squad" onclick="pickMatchFormat('SQUAD')" style="flex:1;padding:8px 4px">
+        <span class="role-opt-icon">👥</span><span class="role-opt-lbl">Squad</span>
+      </div>
+      <div class="role-opt" id="fmt-duo" onclick="pickMatchFormat('DUO')" style="flex:1;padding:8px 4px">
+        <span class="role-opt-icon">🤝</span><span class="role-opt-lbl">Duo</span>
+      </div>
+      <div class="role-opt" id="fmt-solo" onclick="pickMatchFormat('SOLO')" style="flex:1;padding:8px 4px">
+        <span class="role-opt-icon">🎮</span><span class="role-opt-lbl">Solo</span>
+      </div>
+    </div>
+    <input type="hidden" id="nm-format" value="SQUAD"/>
+
+    <!-- 4. Max Teams -->
+    <label class="fl">Maximum Teams</label>
+    <input class="fi" type="number" id="nm-maxteams" value="12" min="2" max="100" placeholder="e.g. 12"/>
+
+    <!-- Tournament fields (hidden for daily) -->
+    <div id="nm-tour-fields">
+      <label class="fl">Tournament / Season</label>
+      <select class="fi" id="nm-container" onchange="onMatchContainerChange()">
+        <option value="">-- None --</option>
+        ${tournaments.map(t=>`<option value="${t.id}">[TOUR] ${t.name}</option>`).join('')}
+        ${seasons.map(s=>`<option value="${s.id}">[SEASON] ${s.name}</option>`).join('')}
+      </select>
+      <div id="nm-container-warn" style="display:none;font-family:var(--font-mono);font-size:9px;color:var(--gold);letter-spacing:1px;margin:-8px 0 10px;padding:6px 10px;background:rgba(255,193,7,0.06);border:1px solid rgba(255,193,7,0.15);border-radius:3px">
+        ⚠ No registrations found for this container. Showing all teams.
+      </div>
+
+      <label class="fl">Round / Label</label>
+      <select class="fi" id="nm-round">
+        <option>Round 1</option><option>Round 2</option><option>Round 3</option>
+        <option>Quarter Finals</option><option>Semi Finals</option><option>Finals</option><option>Grand Finals</option>
+      </select>
+
+      <label class="fl" id="nm-t1-label">Team 1</label>
+      <select class="fi" id="nm-t1">
+        <option value="">-- Select Team --</option>
+        ${teams.map(t=>`<option value="${t.id}">${t.name} [${t.tag}]</option>`).join('')}
+      </select>
+      <label class="fl" id="nm-t2-label">Team 2</label>
+      <select class="fi" id="nm-t2">
+        <option value="">-- Select Team --</option>
+        ${teams.map(t=>`<option value="${t.id}">${t.name} [${t.tag}]</option>`).join('')}
+      </select>
+
+      <div id="br-extra-teams-wrap" style="display:none">
+        <div style="font-family:var(--font-mono);font-size:9px;color:var(--cyan);letter-spacing:2px;margin-bottom:8px">// SELECT TEAMS</div>
+        <div style="display:flex;gap:8px;margin-bottom:8px">
+          <button class="btn btn-ghost btn-xs" onclick="brCheckAll(true)">✓ ALL</button>
+          <button class="btn btn-ghost btn-xs" onclick="brCheckAll(false)">✕ CLEAR</button>
+        </div>
+        <div style="background:rgba(0,245,255,0.03);border:1px solid rgba(0,245,255,0.1);padding:10px 13px;margin-bottom:13px;max-height:200px;overflow-y:auto" id="br-team-checkboxes">
+          ${teams.length?teams.map(t=>`<label style="display:flex;align-items:center;gap:8px;padding:6px 0;cursor:pointer;border-bottom:1px solid rgba(255,255,255,0.04)">
+            <input type="checkbox" class="br-team-cb" value="${t.id}" style="accent-color:var(--cyan);width:14px;height:14px"/>
+            <span style="font-family:var(--font-hd);font-size:12px">${t.name}</span>
+            <span style="font-family:var(--font-mono);font-size:9px;color:var(--purple)">[${t.tag}]</span>
+          </label>`).join(''):`<div style="font-family:var(--font-mono);font-size:10px;color:var(--muted);text-align:center;padding:12px">No teams found</div>`}
+        </div>
+      </div>
     </div>
 
-    <label class="fl">Round</label>
-    <select class="fi" id="nm-round">
-      <option>Round 1</option><option>Round 2</option><option>Round 3</option>
-      <option>Quarter Finals</option><option>Semi Finals</option><option>Finals</option><option>Grand Finals</option>
-    </select>
-
-    <label class="fl" id="nm-t1-label">Team 1</label>
-    <select class="fi" id="nm-t1">
-      <option value="">-- Select Tournament First --</option>
-    </select>
-
-    <label class="fl" id="nm-t2-label">Team 2</label>
-    <select class="fi" id="nm-t2">
-      <option value="">-- Select Tournament First --</option>
-    </select>
-
-    <div id="br-extra-teams-wrap" style="display:none">
-      <div style="font-family:var(--font-mono);font-size:9px;color:var(--cyan);letter-spacing:2px;margin-bottom:8px;margin-top:4px">// SELECT TEAMS FOR THIS BR MATCH</div>
-      <div style="display:flex;gap:8px;margin-bottom:8px">
-        <button class="btn btn-ghost btn-xs" onclick="brCheckAll(true)">✓ SELECT ALL</button>
-        <button class="btn btn-ghost btn-xs" onclick="brCheckAll(false)">✕ CLEAR ALL</button>
+    <!-- Daily Match fields -->
+    <div id="nm-daily-fields">
+      <label class="fl">Match Label / Name</label>
+      <input class="fi" id="nm-label" placeholder="e.g. Thursday Night Battle"/>
+      <label class="fl">Entry Fee <span style="color:var(--muted);font-size:9px">(type 'Free' if no fee)</span></label>
+      <input class="fi" id="nm-entry" placeholder="e.g. ₹10 / Free"/>
+      <label class="fl">Prize Pool</label>
+      <input class="fi" id="nm-prize" placeholder="e.g. ₹500"/>
+      <label class="fl">📱 Payment QR Code</label>
+      <div id="nm-qr-preview-wrap" style="margin-bottom:10px">
+        ${defaultQr
+          ?`<img src="${defaultQr}" style="width:120px;height:120px;object-fit:contain;border:1px solid rgba(255,215,0,0.3);cursor:pointer" onclick="g('nm-qr-file').click()" title="Click to change"/>`
+          :`<div style="background:rgba(255,215,0,0.03);border:2px dashed rgba(255,215,0,0.2);width:120px;height:120px;display:flex;align-items:center;justify-content:center;font-family:var(--font-mono);font-size:9px;color:var(--muted);cursor:pointer;flex-direction:column;gap:6px" onclick="g('nm-qr-file').click()"><span style="font-size:22px">📱</span>UPLOAD QR</div>`}
       </div>
-      <div style="background:rgba(0,245,255,0.03);border:1px solid rgba(0,245,255,0.1);padding:10px 13px;margin-bottom:13px;max-height:220px;overflow-y:auto;" id="br-team-checkboxes">
-        <div style="font-family:var(--font-mono);font-size:10px;color:var(--muted);text-align:center;padding:12px">Select a Tournament / Season first</div>
-      </div>
+      <input type="file" id="nm-qr-file" accept="image/*" style="display:none" onchange="previewNmQR(event)"/>
+      <input type="hidden" id="nm-qr-data" value="${defaultQr}"/>
     </div>
 
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
@@ -2376,17 +3378,20 @@ function openCreateMatch(){
       <div><label class="fl">Time</label><input class="fi" id="nm-time" placeholder="e.g. 8:30 PM"/></div>
     </div>
 
-    <label class="fl">📱 Your WhatsApp/Phone (Room ID & Pass will be sent here)</label>
-    <input class="fi" id="nm-adminphone" placeholder="e.g. 9876543210" value="${cu?.phone||''}"/>
-    <div style="background:rgba(0,245,255,0.04);border:1px solid rgba(0,245,255,0.1);padding:10px 13px;margin-bottom:13px;font-family:var(--font-mono);font-size:10px;color:var(--muted);letter-spacing:1px">
-      ℹ Room ID &amp; Password — set them later by clicking EDIT on the match. They stay hidden until you click RELEASE.
-    </div>
-
     <div class="err-msg" id="nm-err"></div>
     <button class="btn btn-cyan btn-full" onclick="saveNewMatch()">⚡ CREATE MATCH</button>
   `);
-  // Show BR team selector by default since BR is pre-selected
-  setTimeout(()=>pickMatchType('BR'),50);
+  setTimeout(()=>{pickMatchType('DAILY');pickGameMode('BR');pickMatchFormat('SQUAD');},50);
+}
+
+function previewNmQR(e){
+  const f=e.target.files[0];if(!f)return;
+  const reader=new FileReader();
+  reader.onload=function(ev){
+    const data=ev.target.result;
+    if(g('nm-qr-data'))g('nm-qr-data').value=data;
+    if(g('nm-qr-preview-wrap'))g('nm-qr-preview-wrap').innerHTML=`<img src="${data}" style="width:130px;height:130px;object-fit:contain;border:1px solid rgba(255,215,0,0.3);cursor:pointer" onclick="g('nm-qr-file').click()" title="Click to change"/>`;
+  };reader.readAsDataURL(f);
 }
 
 // ── Get registered teams for a container (tournament or season) ──
@@ -2467,63 +3472,116 @@ function brCheckAll(check){
 }
 
 let _matchType='BR';
+let _matchFormat='SQUAD';
+
 function pickMatchType(t){
   _matchType=t;
-  g('nm-type').value=t;
-  g('mt-br').className='role-opt'+(t==='BR'?' sel-ply':'');
-  g('mt-cs').className='role-opt'+(t==='CS'?' sel-ply':'');
-  const brWrap=g('br-extra-teams-wrap');
-  if(brWrap) brWrap.style.display=t==='BR'?'block':'none';
-  // Hide/show Team 1 & Team 2 dropdowns
-  const t1=g('nm-t1'),t2=g('nm-t2'),l1=g('nm-t1-label'),l2=g('nm-t2-label');
-  [t1,t2,l1,l2].forEach(el=>{if(el)el.style.display=t==='BR'?'none':'block';});
+  if(g('nm-type')) g('nm-type').value=t;
+  ['mt-daily','mt-tour'].forEach(id=>{const el=g(id);if(el)el.className='role-opt';});
+  const sel=t==='DAILY'?'mt-daily':'mt-tour';
+  if(g(sel)) g(sel).className='role-opt sel-ply';
+
+  const tourFields=g('nm-tour-fields');
+  const dailyFields=g('nm-daily-fields');
+  if(t==='DAILY'){
+    if(tourFields) tourFields.style.display='none';
+    if(dailyFields) dailyFields.style.display='block';
+  } else {
+    if(tourFields) tourFields.style.display='block';
+    if(dailyFields) dailyFields.style.display='none';
+    // Show BR checkboxes by default for tournament
+    const brWrap=g('br-extra-teams-wrap');
+    const t1=g('nm-t1'),t2=g('nm-t2'),l1=g('nm-t1-label'),l2=g('nm-t2-label');
+    if(brWrap) brWrap.style.display='block';
+    [t1,t2,l1,l2].forEach(el=>{if(el)el.style.display='none';});
+  }
+}
+
+function pickGameMode(gm){
+  if(g('nm-gamemode')) g('nm-gamemode').value=gm;
+  ['gm-br','gm-cs'].forEach(id=>{const el=g(id);if(el)el.className='role-opt';});
+  const sel=gm==='BR'?'gm-br':'gm-cs';
+  if(g(sel)) g(sel).className='role-opt sel-ply';
+}
+
+function pickMatchFormat(f){
+  _matchFormat=f;
+  if(g('nm-format')) g('nm-format').value=f;
+  // Reset all format buttons
+  ['fmt-squad','fmt-duo','fmt-solo'].forEach(id=>{
+    const el=g(id);
+    if(el) el.className='role-opt';
+  });
+  // Highlight selected (use sel-cap for format = blue tinge)
+  const selMap={SQUAD:'fmt-squad',DUO:'fmt-duo',SOLO:'fmt-solo'};
+  if(g(selMap[f])) g(selMap[f]).className='role-opt sel-cap';
 }
 
 function saveNewMatch(){
-  const isBR=_matchType==='BR';
+  const isDaily=_matchType==='DAILY';
+  const gameMode=g('nm-gamemode')?.value||'BR';
+  const isCS=gameMode==='CS';
 
   let t1Id,t2Id,brTeamIds=[];
-  if(isBR){
-    // Collect all checked teams for BR
+
+  if(isDaily){
+    t1Id=null; t2Id=null; brTeamIds=[];
+  } else if(!isCS){
+    // Tournament BR — checkboxes
     const checked=document.querySelectorAll('.br-team-cb:checked');
     brTeamIds=[...checked].map(c=>c.value);
-    if(brTeamIds.length<2){set('nm-err','⚠ SELECT AT LEAST 2 TEAMS FOR BR');return;}
-    if(brTeamIds.length>12){set('nm-err','⚠ MAX 12 TEAMS FOR BR');return;}
+    if(brTeamIds.length<2){set('nm-err','⚠ SELECT AT LEAST 2 TEAMS');return;}
     t1Id=brTeamIds[0];t2Id=brTeamIds[1];
   } else {
+    // Tournament CS — dropdowns
     t1Id=v('nm-t1');t2Id=v('nm-t2');
     if(!t1Id||!t2Id){set('nm-err','⚠ SELECT BOTH TEAMS');return;}
     if(t1Id===t2Id){set('nm-err','⚠ TEAMS MUST BE DIFFERENT');return;}
+    brTeamIds=[t1Id,t2Id];
   }
 
   const t1=DB.teams.find(x=>x.id===t1Id),t2=DB.teams.find(x=>x.id===t2Id);
+  const maxTeams=parseInt(g('nm-maxteams')?.value||'12')||12;
+  const entry=isDaily?(v('nm-entry')||''):'';
+  const prize=isDaily?(v('nm-prize')||''):'';
+  const qrImage=isDaily?(g('nm-qr-data')?.value||''):'';
+  const label=isDaily?(v('nm-label')||''):'';
+
   const match={
     id:'m2_'+Date.now(),
-    matchType:_matchType,
-    containerId:v('nm-container'),
-    round:v('nm-round')||'Round 1',
+    matchType:isDaily?'DAILY':'TOUR',
+    gameMode,
+    matchFormat:_matchFormat,
+    maxTeams,
+    containerId:isDaily?null:(v('nm-container')||null),
+    round:isDaily?(label||'Daily Match'):(v('nm-round')||'Round 1'),
+    label,
     team1Id:t1Id,team2Id:t2Id,
     team1:t1?.name||'',team2:t2?.name||'',
-    brTeamIds:isBR?brTeamIds:[t1Id,t2Id],
+    brTeamIds,
+    entry,prize,qrImage,
     date:v('nm-date'),time:v('nm-time'),
     roomId:'',roomPass:'',
     roomReleased:false,result:'',brScores:[],
+    bannedTeams:[],
+    status:'open',
     createdAt:Date.now()
   };
   if(!DB._d.matches)DB._d.matches=[];
   DB.matches.push(match);DB.save();
-  // Notify all teams playing this match
-  const notifyTeamIds=isBR?brTeamIds:[t1Id,t2Id];
-  notifyTeamIds.forEach(tid=>{
-    const team=DB.teams.find(x=>x.id===tid);
-    if(!team)return;
-    const affectedMembers=[team.captainId,...(team.members||[])];
-    affectedMembers.forEach(uid=>{
-      DB.requests.push({id:'notif'+Date.now()+Math.random(),type:'match_scheduled',toUserId:uid,fromUserId:'admin1',matchId:match.id,status:'unread',at:Date.now(),
-        title:'📅 Match Scheduled!',body:`Your team "${team.name}" — ${match.round} · ${match.date||'TBD'} ${match.time||''}`});
+  // Notify teams (only for tournament matches)
+  if(!isDaily){
+    brTeamIds.forEach(tid=>{
+      const team=DB.teams.find(x=>x.id===tid);
+      if(!team)return;
+      const affectedMembers=[team.captainId,...(team.members||[])];
+      affectedMembers.forEach(uid=>{
+        DB.requests.push({id:'notif'+Date.now()+Math.random(),type:'match_scheduled',toUserId:uid,fromUserId:'admin1',matchId:match.id,status:'unread',at:Date.now(),
+          title:'📅 Match Scheduled!',body:`Your team "${team.name}" — ${match.round} · ${match.date||'TBD'} ${match.time||''} [${_matchFormat}]`});
+      });
     });
-  });
-  DB.save();closeMo();showToast('✓ MATCH CREATED & TEAMS NOTIFIED',false,'ok');
+  }
+  DB.save();closeMo();showToast('✓ MATCH CREATED',false,'ok');
   updateNotifBadge();buildSidebar();pMatches(g('mc'));
 }
 
@@ -2557,19 +3615,21 @@ function openSetResult(matchId){
   if(!m)return;
   const t1=DB.teams.find(x=>x.id===m.team1Id);
   const t2=DB.teams.find(x=>x.id===m.team2Id);
-  const isBR=m.matchType==='BR';
+  const isDaily=m.matchType==='DAILY'||m.matchType==='daily';
+  const isBRmode=m.gameMode==='BR'||m.matchType==='BR'||(!m.gameMode&&!isDaily&&m.matchType!=='CS');
 
-  if(isBR){
-    // BR: use all teams that were added to this match
+  if(isDaily||isBRmode){
+    // Get teams based on match type
     let brTeams=[];
-    if(m.brTeamIds&&m.brTeamIds.length){
-      brTeams=m.brTeamIds.map(id=>DB.teams.find(t=>t.id===id)).filter(Boolean);
+    if(isDaily){
+      // Daily: approved join requests
+      const approvedReqs=DB.requests.filter(r=>r.type==='daily_join'&&r.matchId===m.id&&r.status==='approved');
+      brTeams=approvedReqs.map(r=>DB.teams.find(t=>t.id===r.teamId)).filter(Boolean);
+      if(!brTeams.length) brTeams=(m.brTeamIds||[]).map(id=>DB.teams.find(t=>t.id===id)).filter(Boolean);
+      if(!brTeams.length){showToast('⚠ KOI TEAM APPROVED NAHI HUI ABHI TAK',true);return;}
     } else {
-      // Fallback for old matches without brTeamIds
-      const allTeamsInMatch=DB.registrations
-        .filter(r=>r.tournamentId===m.containerId||DB.seasons.find(s=>s.id===m.containerId))
-        .map(r=>DB.teams.find(t=>t.id===r.teamId)).filter(Boolean).slice(0,12);
-      brTeams=allTeamsInMatch.length>0?allTeamsInMatch:[t1,t2].filter(Boolean);
+      brTeams=(m.brTeamIds||[]).map(id=>DB.teams.find(t=>t.id===id)).filter(Boolean);
+      if(!brTeams.length) brTeams=[t1,t2].filter(Boolean);
     }
 
     openMo(`<button class="mo-close" onclick="closeMo()">✕</button>
@@ -2590,21 +3650,28 @@ function openSetResult(matchId){
     // CS: simple winner pick
     openMo(`<button class="mo-close" onclick="closeMo()">✕</button>
       <div class="mo-title">⚔ SET CS RESULT</div>
-      <div style="font-family:var(--font-mono);font-size:9px;color:var(--muted);letter-spacing:2px;margin-bottom:14px">SELECT WINNER</div>
+      <div style="font-family:var(--font-mono);font-size:9px;color:var(--muted);letter-spacing:2px;margin-bottom:14px">WINNER SELECT KARO</div>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:14px">
-        <div style="background:rgba(0,245,255,0.05);border:2px solid rgba(0,245,255,0.1);padding:16px;text-align:center;cursor:pointer;transition:all .2s" onclick="this.style.borderColor='rgba(10,255,160,0.6)';g('cs-winner-other')&&(g('cs-winner-other').style.borderColor='rgba(0,245,255,0.1)');g('cs-win-val').value='${t1?.name||''}'">
+        <div id="cs-opt-1" style="background:rgba(0,245,255,0.05);border:2px solid rgba(0,245,255,0.15);padding:16px;text-align:center;cursor:pointer;border-radius:6px;transition:all .2s" onclick="csPickWinner('${t1?.name||''}','cs-opt-1','cs-opt-2')">
           <div style="font-size:22px;margin-bottom:6px">🏆</div>
-          <div style="font-family:var(--font-hd);font-size:14px;letter-spacing:2px">${t1?.name||'Team 1'}</div>
+          <div style="font-family:var(--font-hd);font-size:14px;letter-spacing:2px;color:#fff">${t1?.name||'Team 1'}</div>
+          <div style="font-family:var(--font-mono);font-size:9px;color:var(--muted);margin-top:3px">${t1?.tag||''}</div>
         </div>
-        <div id="cs-winner-other" style="background:rgba(191,95,255,0.05);border:2px solid rgba(191,95,255,0.1);padding:16px;text-align:center;cursor:pointer;transition:all .2s" onclick="this.style.borderColor='rgba(10,255,160,0.6)';g('cs-win-val').value='${t2?.name||''}';document.querySelector('[onclick*=cs-winner-other]')&&(document.querySelector('[onclick*=cs-winner-other]').style.borderColor='rgba(0,245,255,0.1)')">
+        <div id="cs-opt-2" style="background:rgba(191,95,255,0.05);border:2px solid rgba(191,95,255,0.15);padding:16px;text-align:center;cursor:pointer;border-radius:6px;transition:all .2s" onclick="csPickWinner('${t2?.name||''}','cs-opt-2','cs-opt-1')">
           <div style="font-size:22px;margin-bottom:6px">🏆</div>
-          <div style="font-family:var(--font-hd);font-size:14px;letter-spacing:2px">${t2?.name||'Team 2'}</div>
+          <div style="font-family:var(--font-hd);font-size:14px;letter-spacing:2px;color:#fff">${t2?.name||'Team 2'}</div>
+          <div style="font-family:var(--font-mono);font-size:9px;color:var(--muted);margin-top:3px">${t2?.tag||''}</div>
         </div>
       </div>
-      <label class="fl">Or type custom result</label>
-      <input class="fi" id="cs-win-val" placeholder="Winner team name or score e.g. 16-12"/>
+      <input class="fi" id="cs-win-val" placeholder="Ya custom result type karo (e.g. 16-12)" style="margin-bottom:12px"/>
       <button class="btn btn-gold btn-full" onclick="saveCSResult('${matchId}')">⚡ CONFIRM RESULT</button>`);
   }
+}
+
+function csPickWinner(name, selId, otherId){
+  if(g('cs-win-val')) g('cs-win-val').value=name;
+  if(g(selId)) g(selId).style.borderColor='rgba(10,255,160,0.7)';
+  if(g(otherId)) g(otherId).style.borderColor='rgba(255,255,255,0.1)';
 }
 
 function calcBRTotal(teamId){
