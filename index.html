@@ -7,6 +7,7 @@
 <!-- Firebase -->
 <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore-compat.js"></script>
+<script src="https://checkout.razorpay.com/v1/checkout.js"></script>
 
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=Roboto+Mono:wght@400;500&display=swap" rel="stylesheet"/>
 <style>
@@ -127,6 +128,8 @@ textarea.fi{resize:vertical;}
 .btn-red{background:rgba(244,67,54,0.1);color:#f44336;border:1px solid rgba(244,67,54,0.3);}
 .btn-green{background:rgba(0,230,118,0.1);color:#00e676;border:1px solid rgba(0,230,118,0.3);}
 .btn-ghost{background:rgba(255,255,255,0.04);color:#607d8b;border:1px solid rgba(255,255,255,0.1);}
+.btn-purple{background:rgba(124,77,255,0.12);color:#b388ff;border:1px solid rgba(124,77,255,0.4);}
+.btn-purple:hover{background:rgba(124,77,255,0.22);}
 .btn-ghost:hover{color:#fff;border-color:rgba(255,255,255,0.25);}
 .btn-orange{background:linear-gradient(135deg,rgba(255,107,43,0.18),rgba(200,80,0,0.12));color:var(--orange);border:1px solid rgba(255,107,43,0.35);}
 .btn-sm{padding:7px 13px;font-size:9px;letter-spacing:2px;}
@@ -402,6 +405,7 @@ hr.cyber{border:none;border-top:1px solid rgba(0,245,255,0.06);margin:14px 0;}
   .nav-name,.nav-sub{display:none;}
   .navbar{padding:0 12px !important;}
   .match-teams-row{grid-template-columns:1fr auto 1fr;gap:6px;padding:10px 10px;}
+  .match-block{border-radius:8px !important;}
   .match-team-name{font-size:11px !important;letter-spacing:1px !important;}
   .tcard-name{font-size:13px !important;}
   .sc-val{font-size:26px !important;}
@@ -474,6 +478,22 @@ html, body {
   flex-wrap: wrap !important;
 }
 
+
+/* ══ IMAGE MANAGER CSS ══ */
+.img-card{background:#111;border:1px solid rgba(26,111,255,0.2);border-radius:8px;overflow:hidden;position:relative;}
+.img-preview{width:100%;height:120px;object-fit:cover;display:block;background:#0a0a0a;}
+.img-placeholder{width:100%;height:120px;background:linear-gradient(135deg,#0a0a0a,#111);display:flex;align-items:center;justify-content:center;flex-direction:column;gap:6px;cursor:pointer;border:2px dashed rgba(26,111,255,0.2);}
+.img-placeholder:hover{border-color:rgba(26,111,255,0.5);background:rgba(26,111,255,0.04);}
+.img-label{font-family:'Roboto Mono',monospace;font-size:10px;color:#607d8b;letter-spacing:2px;text-transform:uppercase;padding:8px 12px;background:#0a0a0a;border-top:1px solid rgba(26,111,255,0.1);}
+.img-actions{display:flex;gap:6px;padding:8px 10px;background:#0a0a0a;border-top:1px solid rgba(255,255,255,0.05);}
+.img-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:14px;margin-top:16px;}
+@media(max-width:768px){.img-grid{grid-template-columns:repeat(2,1fr);gap:10px;}}
+
+/* Apply bg images to cards */
+.sc-img{position:relative;overflow:hidden;}
+.sc-img::after{content:'';position:absolute;inset:0;background:rgba(0,0,0,0.55);pointer-events:none;}
+.sc-img .sc-val,.sc-img .sc-lbl,.sc-img .sc-icon{position:relative;z-index:1;}
+.card-bg{background-size:cover !important;background-position:center !important;}
 </style>
 </head>
 <body>
@@ -564,7 +584,7 @@ html, body {
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
       Matches
     </button>
-    <button class="mob-nav-item" id="mob-daily" onclick="nav('profile');setTimeout(()=>switchProfileTab('daily'),200)">
+    <button class="mob-nav-item" id="mob-daily" onclick="nav('matches');setTimeout(()=>switchMatchTab('daily'),100)">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/><line x1="8" y1="14" x2="8" y2="14" stroke-linecap="round" stroke-width="2.5"/><line x1="12" y1="14" x2="12" y2="14" stroke-linecap="round" stroke-width="2.5"/><line x1="16" y1="14" x2="16" y2="14" stroke-linecap="round" stroke-width="2.5"/></svg>
       Daily
     </button>
@@ -589,6 +609,31 @@ html, body {
 <div class="toast" id="toast"></div>
 
 <script>
+// ╔══════════════════════════════════════════════════════════╗
+// ║           ⚙️  ZONEX CONFIG — SIRF YAHAN EDIT KARO       ║
+// ║  AI ko theme/UI change karne ke liye yahan aane ki      ║
+// ║  zarurat NAHI — ye section touch mat karna              ║
+// ╠══════════════════════════════════════════════════════════╣
+// ║  PAYMENT GATEWAY (Razorpay)                             ║
+// ╚══════════════════════════════════════════════════════════╝
+const ZONEX_CONFIG = {
+  // ── Razorpay Keys ──────────────────────────────────────
+  // TEST key (fake payments):  rzp_test_XXXXXXXXXXXXXXX
+  // LIVE key (real payments):  rzp_live_XXXXXXXXXXXXXXX
+  // Sirf neeche wali line change karo jab live karna ho:
+  RAZORPAY_KEY: 'rzp_test_SztSNvK2gn4Bbb',
+
+  // ── Site Name (Razorpay popup mein dikhta hai) ─────────
+  SITE_NAME: 'ZoneX Esports',
+
+  // ── Currency ───────────────────────────────────────────
+  CURRENCY: 'INR',
+};
+// ══════════════════════════════════════════════════════════
+// ⚠️  UPAR WALE SECTION KE BAAD KUCH EDIT MAT KARNA
+//     JAB TAK PAYMENT SYSTEM SAMAJH NA AYE
+// ══════════════════════════════════════════════════════════
+
 // ══════════════════════════════════════════════
 // FIREBASE CONFIG + INIT (with localStorage fallback)
 // ══════════════════════════════════════════════
@@ -831,7 +876,7 @@ function updateNotifBadge(){
 }
 
 const menus={
-  admin:[{id:'dashboard',l:'Dashboard'},{id:'seasons',l:'Seasons'},{id:'tournaments',l:'Tournaments'},{id:'matches',l:'Matches'},{id:'point-table',l:'Point Table'},{id:'teams',l:'All Teams'},{id:'players',l:'All Players'},{id:'team-chats',l:'Team Chats'},{id:'approvals',l:'Approvals'},{id:'notifications',l:'Notifications'},{id:'add-tournament',l:'Add Tournament'}],
+  admin:[{id:'dashboard',l:'Dashboard'},{id:'seasons',l:'Seasons'},{id:'tournaments',l:'Tournaments'},{id:'matches',l:'Matches'},{id:'schedule',l:'Daily Match'},{id:'point-table',l:'Point Table'},{id:'teams',l:'All Teams'},{id:'players',l:'All Players'},{id:'team-chats',l:'Team Chats'},{id:'approvals',l:'Approvals'},{id:'notifications',l:'Notifications'},{id:'add-tournament',l:'Add Tournament'},{id:'image-manager',l:'Image Manager'}],
   captain:[{id:'dashboard',l:'Dashboard'},{id:'seasons',l:'Seasons'},{id:'tournaments',l:'Tournaments'},{id:'matches',l:'My Matches'},{id:'my-team',l:'My Team'},{id:'point-table',l:'Point Table'},{id:'admin-chat',l:'Contact Admin'},{id:'notifications',l:'Notifications'},{id:'profile',l:'My Profile'}],
   player:[{id:'dashboard',l:'Dashboard'},{id:'seasons',l:'Seasons'},{id:'tournaments',l:'Tournaments'},{id:'matches',l:'My Matches'},{id:'point-table',l:'Point Table'},{id:'admin-chat',l:'Contact Admin'},{id:'notifications',l:'Notifications'},{id:'profile',l:'My Profile'}],
 };
@@ -918,7 +963,7 @@ function nav(page){
   document.querySelectorAll('.sb-item').forEach(el=>el.classList.remove('active'));
   const sb=g('sb-'+page);if(sb)sb.classList.add('active');
   updateMobNav(page);
-  ({dashboard:pDash,seasons:pSeasons,tournaments:pTour,schedule:pSchedule,matches:pMatches,teams:pTeams,players:pPlayers,notifications:pNotifications,approvals:pAdminApprovals,'point-table':pPointTable,'team-chats':pTeamChats,'admin-chat':()=>openMyAdminChat(),'add-tournament':pAddTour,'my-team':pMyTeam,profile:pProfile}[page]||pDash)(g('mc'));
+  ({dashboard:pDash,seasons:pSeasons,tournaments:pTour,schedule:pSchedule,matches:pMatches,teams:pTeams,players:pPlayers,notifications:pNotifications,approvals:pAdminApprovals,'image-manager':pImageManager,'point-table':pPointTable,'team-chats':pTeamChats,'admin-chat':()=>openMyAdminChat(),'add-tournament':pAddTour,'my-team':pMyTeam,profile:pProfile}[page]||pDash)(g('mc'));
 }
 
 // ════════════════════════════════
@@ -958,7 +1003,7 @@ function pDash(el){
     <div class="sec-hd"><div class="sec-title"><div class="sec-bar"></div>DASHBOARD</div>
       ${cu.role==='admin'?`<div style="display:flex;gap:8px"><button class="btn btn-gold btn-sm" onclick="openTeamSearch()">🔍 FIND TEAM</button><button class="btn btn-red btn-sm" onclick="openAdminChangePw()">🔐 CHANGE PW</button></div>`:''}</div>
     <div class="stats-grid">
-      <div class="sc" style="--sc-grad:linear-gradient(90deg,var(--cyan),var(--cyan2))"><div class="sc-icon">🏆</div><div class="sc-val">${tc}</div><div class="sc-lbl">Tournaments</div></div>
+      <div class="sc" style="--sc-grad:linear-gradient(90deg,var(--cyan),var(--cyan2));"+cardBgStyle('stat_tournaments')><div class="sc-icon">🏆</div><div class="sc-val">${tc}</div><div class="sc-lbl">Tournaments</div></div>
       <div class="sc" style="--sc-grad:linear-gradient(90deg,var(--green),#00c97d)"><div class="sc-icon">🟢</div><div class="sc-val">${oc}</div><div class="sc-lbl">Open Now</div></div>
       <div class="sc" style="--sc-grad:linear-gradient(90deg,var(--purple),var(--purple2))"><div class="sc-icon">⭐</div><div class="sc-val">${sc}</div><div class="sc-lbl">Seasons</div></div>
     </div>
@@ -969,10 +1014,11 @@ function pDash(el){
 }
 
 function tCardFn(t){
+  const _tbg = cardBgStyle('tournament_card','tour_'+t.id);
   const sc={open:'b-open',closed:'b-closed',ongoing:'b-ongoing'}[t.status]||'b-closed';
   const ac={open:'var(--green)',closed:'var(--muted)',ongoing:'var(--gold)'}[t.status];
   const regs=DB.registrations.filter(r=>r.tournamentId===t.id).length;
-  return`<div class="tcard"><div class="tcard-accent" style="background:${ac}"></div>
+  return`<div class="tcard" style="${_tbg}"><div class="tcard-accent" style="background:${ac}"></div>
     <div class="tcard-top"><div><div class="tcard-name">${t.name}</div><div class="tcard-meta">📅 ${t.date} · 🗺 ${t.map||'TBD'} · 👥 ${regs}/${t.maxTeams||12}${t.format?' · '+t.format:''}</div></div><span class="badge ${sc}">${t.status.toUpperCase()}</span></div>
     <div class="tcard-body"><div class="tcard-prize">🏆 ${t.prize||'—'}</div>${t.entry?`<div style="font-family:var(--font-mono);font-size:10px;color:var(--gold2)">ENTRY: ${t.entry}</div>`:''}</div>
   </div>`;
@@ -1087,43 +1133,71 @@ function pTour(el){
   </div>`;
 }
 
-// REGISTER TOUR WITH QR + UTR
+// REGISTER TOUR WITH RAZORPAY
 function openRegTour(tId){
   const t=DB.tournaments.find(x=>x.id===tId);
   const mt=DB.teams.find(x=>x.captainId===cu.id);
   if(!mt){showToast('⚠ CREATE YOUR TEAM FIRST',true);return;}
   const needsPay=t.entry&&t.entry.toLowerCase()!=='free'&&t.entry.trim()!=='';
+  const amt=needsPay?parseAmount(t.entry):0;
   openMo(`<button class="mo-close" onclick="closeMo()">✕</button>
     <div class="mo-title">⚡ REGISTER TEAM</div>
-    <div style="background:rgba(0,245,255,0.04);border:1px solid rgba(0,245,255,0.12);padding:13px;margin-bottom:14px">
+    <div style="background:rgba(0,245,255,0.04);border:1px solid rgba(0,245,255,0.12);padding:13px;margin-bottom:14px;border-radius:6px">
       <div style="font-family:var(--font-hd);font-size:15px;letter-spacing:2px">${t.name}</div>
       <div style="font-family:var(--font-mono);font-size:10px;color:var(--muted);margin-top:3px">📅 ${t.date} · 🏆 ${t.prize||'—'}</div>
     </div>
-    <div style="background:rgba(191,95,255,0.04);border:1px solid rgba(191,95,255,0.12);padding:13px;margin-bottom:14px">
+    <div style="background:rgba(191,95,255,0.04);border:1px solid rgba(191,95,255,0.12);padding:13px;margin-bottom:14px;border-radius:6px">
       <div style="font-family:var(--font-mono);font-size:9px;color:var(--purple);letter-spacing:2px;margin-bottom:6px">YOUR TEAM</div>
       <div style="font-family:var(--font-hd);font-size:17px;letter-spacing:2px">${mt.name} <span style="font-size:11px;color:var(--purple)">${mt.tag}</span></div>
       <div style="font-family:var(--font-mono);font-size:10px;color:var(--muted);margin-top:3px">${mt.members.length} members</div>
     </div>
     ${needsPay?`
-    <div class="qr-area">
-      <div style="font-family:var(--font-mono);font-size:9px;color:var(--gold);letter-spacing:3px;margin-bottom:12px">// PAYMENT — ${t.entry}</div>
-      <div class="qr-img-wrap" id="qr-display">
-        ${t.qrImage?`<img src="${t.qrImage}" alt="QR Code"/>`:`<div class="qr-placeholder-text">📱<br><br>QR CODE<br>NOT SET<br><br><span style="font-size:8px">Admin needs to add QR</span></div>`}
-      </div>
-      <div style="font-family:var(--font-mono);font-size:10px;color:var(--gold);margin-top:4px">Scan & Pay · Entry: ${t.entry}</div>
-      <div class="utr-area">
-        <div class="utr-lbl">// ENTER UTR / TRANSACTION ID AFTER PAYMENT</div>
-        <input class="fi" type="text" id="utr-in" placeholder="e.g. UTR123456789012" style="margin-bottom:0"/>
-      </div>
+    <div style="background:rgba(255,193,7,0.06);border:1px solid rgba(255,193,7,0.25);padding:14px;border-radius:6px;margin-bottom:14px;text-align:center">
+      <div style="font-family:var(--font-mono);font-size:9px;color:var(--gold);letter-spacing:3px;margin-bottom:8px">// ENTRY FEE</div>
+      <div style="font-family:var(--font-hd);font-size:32px;font-weight:900;color:var(--gold)">₹${amt}</div>
+      <div style="font-family:var(--font-mono);font-size:9px;color:var(--muted);margin-top:4px">UPI · Card · NetBanking · Wallet</div>
     </div>`:``}
     <div class="err-msg" id="reg-err"></div>
-    <button class="btn btn-gold btn-full" onclick="confirmReg('${tId}','${mt.id}',${needsPay})">⚡ CONFIRM REGISTRATION</button>`);
+    <button class="btn btn-gold btn-full" onclick="confirmReg('${tId}','${mt.id}',${needsPay},${amt})">${needsPay?`💳 PAY ₹${amt} & REGISTER`:'⚡ CONFIRM REGISTRATION (FREE)'}</button>`);
 }
-function confirmReg(tId,teamId,needsPay){
-  if(needsPay){const utr=(g('utr-in')?.value||'').trim();if(!utr){set('reg-err','⚠ ENTER UTR/TRANSACTION ID');return;}}
-  const utr=g('utr-in')?.value||'';
-  DB.registrations.push({id:'r'+Date.now(),tournamentId:tId,teamId,captainId:cu.id,utr,at:Date.now()});
-  DB.save();closeMo();showToast('✓ TEAM REGISTERED!',false,'ok');nav('tournaments');
+
+async function confirmReg(tId,teamId,needsPay,amt){
+  let paymentId='FREE';
+  if(needsPay){
+    const t=DB.tournaments.find(x=>x.id===tId);
+    try{
+      set('reg-err','');
+      const btn=document.querySelector('#mo-body .btn-gold');
+      if(btn){btn.disabled=true;btn.textContent='⏳ OPENING PAYMENT...';}
+      paymentId = await openRazorpay({
+        amount: amt,
+        description: 'Tournament Entry: '+(t?.name||'')
+      });
+    } catch(e){
+      const btn=document.querySelector('#mo-body .btn-gold');
+      if(btn){btn.disabled=false;btn.textContent=`💳 PAY ₹${amt} & REGISTER`;}
+      if(e!=='dismissed') showToast('⚠ PAYMENT FAILED, TRY AGAIN',true);
+      return;
+    }
+  }
+  const isPaid = paymentId && paymentId !== 'FREE';
+  DB.registrations.push({id:'r'+Date.now(),tournamentId:tId,teamId,captainId:cu.id,paymentId,status:isPaid?'confirmed':'pending',at:Date.now()});
+
+  // Notification to captain
+  const tObj=DB.tournaments.find(x=>x.id===tId);
+  DB.requests.push({
+    id:'notif'+Date.now(),type:'match_result',
+    toUserId:cu.id,fromUserId:'admin1',
+    status:'unread',at:Date.now(),
+    title: isPaid ? '✅ Tournament Registration Confirmed!' : '⏳ Registration Pending',
+    body: isPaid
+      ? `Payment verified! Team registered for "${tObj?.name||'Tournament'}". Match schedule milega admin se.`
+      : `Registration request bheja gaya "${tObj?.name||'Tournament'}" ke liye. Admin approve karega.`
+  });
+
+  DB.save();closeMo();
+  showToast(isPaid ? '✅ REGISTERED! PAYMENT CONFIRMED!' : '✓ TEAM REGISTERED!', false, 'ok');
+  nav('tournaments');
 }
 
 function chgS(id,s){const t=DB.tournaments.find(x=>x.id===id);if(t){t.status=s;DB.save();nav('tournaments');showToast('✓ STATUS: '+s.toUpperCase(),false,'ok');}}
@@ -1206,45 +1280,196 @@ function addTour(){
 
 // ── SCHEDULE / MATCHES PAGE ──
 function pSchedule(el){
-  const allMatches=DB.matches;
-  const dailyMatches=allMatches.filter(m=>m.matchType==='daily');
-  const tourMatches=allMatches.filter(m=>m.matchType==='tournament'||!m.matchType);
+  const allMatches=DB.matches||[];
+  const isAdmin=cu.role==='admin';
+
+  // Normalize type check
+  const isDaily=m=>m.matchType==='daily'||m.matchType==='DAILY';
+  const isTour=m=>!isDaily(m);
+
+  // For captain/player — find their team
+  const myTeam=DB.teams.find(t=>t.captainId===cu.id||t.members.includes(cu.id));
+
+  // Tournament matches
+  let tourMatches=allMatches.filter(isTour);
+  if(!isAdmin && myTeam){
+    // Only show matches where their team is playing
+    tourMatches=tourMatches.filter(m=>
+      m.team1Id===myTeam.id ||
+      m.team2Id===myTeam.id ||
+      (m.brTeamIds||[]).includes(myTeam.id)
+    );
+  }
+
+  // Daily matches — admin ke liye matches page mein NAHI dikhenge (sirf profile mein)
+  const dailyMatches=(!isAdmin)?allMatches.filter(isDaily):[];
+
+  // Sort state
+  let sortBy=el._sortBy||'date';
+
+  const sortedTour=[...tourMatches].sort((a,b)=>{
+    if(sortBy==='date') return (b.createdAt||0)-(a.createdAt||0);
+    if(sortBy==='round') return (a.round||'').localeCompare(b.round||'');
+    if(sortBy==='status') return (a.status||'').localeCompare(b.status||'');
+    return 0;
+  });
 
   el.innerHTML=`<div style="animation:pageIn .35s ease">
     <div class="sec-hd">
       <div class="sec-title"><div class="sec-bar"></div>MATCHES</div>
-      ${cu.role==='admin'?`<button class="btn btn-purple btn-sm" onclick="openAddMatchType()">+ NEW MATCH</button>`:''}
+      ${isAdmin?`<button class="btn btn-purple btn-sm" onclick="openAddMatchType()">+ NEW MATCH</button>`:''}
     </div>
 
-    <!-- Tabs -->
-    <div class="page-tabs" style="margin-bottom:18px">
-      <button class="page-tab active" id="mtab-daily" onclick="switchMatchTab('daily')">📅 DAILY MATCHES</button>
-      <button class="page-tab" id="mtab-tournament" onclick="switchMatchTab('tournament')">🏆 TOURNAMENT MATCHES</button>
+    ${isAdmin?`
+    <!-- Admin: only tournament tab + sort -->
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;flex-wrap:wrap;gap:8px">
+      <div style="font-family:var(--font-mono);font-size:10px;color:var(--muted);letter-spacing:2px">🏆 TOURNAMENT MATCHES (${sortedTour.length})</div>
+      <div style="display:flex;gap:6px">
+        <button class="btn btn-ghost btn-xs ${sortBy==='date'?'btn-cyan':''}" onclick="document.getElementById('mc')._sortBy='date';pSchedule(document.getElementById('mc'))">DATE</button>
+        <button class="btn btn-ghost btn-xs ${sortBy==='round'?'btn-cyan':''}" onclick="document.getElementById('mc')._sortBy='round';pSchedule(document.getElementById('mc'))">ROUND</button>
+        <button class="btn btn-ghost btn-xs ${sortBy==='status'?'btn-cyan':''}" onclick="document.getElementById('mc')._sortBy='status';pSchedule(document.getElementById('mc'))">STATUS</button>
+      </div>
     </div>
-
-    <!-- Daily Matches -->
-    <div id="match-panel-daily">
-      ${dailyMatches.length?dailyMatches.slice().reverse().map(m=>renderMatchCard(m)).join('')
-        :`<div style="text-align:center;padding:40px;color:var(--muted);font-family:var(--font-mono);font-size:10px;letter-spacing:2px">// NO DAILY MATCHES YET</div>`}
-    </div>
-
-    <!-- Tournament Matches -->
-    <div id="match-panel-tournament" style="display:none">
-      ${tourMatches.length?tourMatches.slice().reverse().map(m=>renderMatchCard(m)).join('')
+    <div id="match-panel-tournament">
+      ${sortedTour.length
+        ?sortedTour.map(m=>renderMatchCard(m)).join('')
         :`<div style="text-align:center;padding:40px;color:var(--muted);font-family:var(--font-mono);font-size:10px;letter-spacing:2px">// NO TOURNAMENT MATCHES YET</div>`}
+    </div>`
+
+    :`
+    <!-- Captain/Player: Tournament + Daily tabs -->
+    <div class="page-tabs" style="margin-bottom:18px">
+      <button class="page-tab active" id="mtab-tournament" onclick="switchMatchTab('tournament')">🏆 MY MATCHES</button>
+      <button class="page-tab" id="mtab-daily" onclick="switchMatchTab('daily')">📅 DAILY MATCHES</button>
     </div>
+
+    <div id="match-panel-tournament">
+      ${sortedTour.length
+        ?sortedTour.map(m=>renderMatchCard(m)).join('')
+        :`<div style="text-align:center;padding:40px;color:var(--muted);font-family:var(--font-mono);font-size:10px;letter-spacing:2px">// KOI TOURNAMENT MATCH ASSIGN NAHI HUA</div>`}
+    </div>
+
+    <div id="match-panel-daily" style="display:none">
+      ${renderDailyForPlayer(myTeam)}
+    </div>`}
+
   </div>`;
 }
 
 function switchMatchTab(tab){
-  g('mtab-daily').className='page-tab'+(tab==='daily'?' active':'');
-  g('mtab-tournament').className='page-tab'+(tab==='tournament'?' active':'');
-  g('match-panel-daily').style.display=tab==='daily'?'block':'none';
-  g('match-panel-tournament').style.display=tab==='tournament'?'block':'none';
+  const tEl=g('mtab-tournament'),dEl=g('mtab-daily');
+  if(tEl) tEl.className='page-tab'+(tab==='tournament'?' active':'');
+  if(dEl) dEl.className='page-tab'+(tab==='daily'?' active':'');
+  const tp=g('match-panel-tournament'),dp=g('match-panel-daily');
+  if(tp) tp.style.display=tab==='tournament'?'block':'none';
+  if(dp) dp.style.display=tab==='daily'?'block':'none';
+}
+
+function renderDailyForPlayer(myTeam){
+  const allDaily=(DB.matches||[]).filter(m=>m.matchType==='daily'||m.matchType==='DAILY');
+  if(!allDaily.length) return`<div style="text-align:center;padding:40px;color:var(--muted);font-family:var(--font-mono);font-size:10px;letter-spacing:2px">// NO DAILY MATCHES YET</div>`;
+
+  const isCap=myTeam&&myTeam.captainId===cu.id;
+  const available=[], registered=[];
+
+  allDaily.slice().reverse().forEach(m=>{
+    const req=myTeam?DB.requests.find(r=>r.type==='daily_join'&&r.matchId===m.id&&r.teamId===myTeam.id):null;
+    if(req) registered.push({m,req});
+    else available.push(m);
+  });
+
+  let html=`<div class="page-tabs" style="margin-bottom:14px">
+    <button class="page-tab active" id="dtab-avail" onclick="switchDailyTab('avail')">📋 AVAILABLE (${available.length})</button>
+    <button class="page-tab" id="dtab-reg" onclick="switchDailyTab('reg')">✅ REGISTERED (${registered.length})</button>
+  </div>
+  <div id="daily-panel-avail">`;
+
+  if(!available.length){
+    html+=`<div style="text-align:center;padding:30px;color:var(--muted);font-family:var(--font-mono);font-size:10px;letter-spacing:2px">// NO OPEN DAILY MATCHES</div>`;
+  } else {
+    available.forEach(m=>{
+      const isBanned=myTeam&&(m.bannedTeams||[]).includes(myTeam.id);
+      const isClosed=m.status==='closed'||m.status==='completed';
+      const full=m.maxTeams&&(m.brTeamIds||[]).length>=(m.maxTeams||12);
+      html+=`<div class="match-block" style="border-left:3px solid ${isBanned?'var(--red)':isClosed||full?'var(--muted2)':'var(--green)'};margin-bottom:10px">
+        <div class="match-top">
+          <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+            <span class="match-type-badge mt-daily">📅 DAILY</span>
+            ${m.label?`<span style="font-weight:700;font-size:13px;color:#fff;letter-spacing:1px">${m.label}</span>`:''}
+            ${(m.gameMode||m.matchFormat)?`<span style="font-family:var(--font-mono);font-size:9px;color:var(--orange);background:rgba(255,107,43,0.1);border:1px solid rgba(255,107,43,0.3);border-radius:3px;padding:2px 7px">${m.gameMode||''} ${m.matchFormat||''}</span>`:''}
+          </div>
+          <span class="badge ${m.status==='open'?'b-open':m.status==='ongoing'?'b-ongoing':'b-closed'}">${(m.status||'open').toUpperCase()}</span>
+        </div>
+        <div style="padding:6px 16px 10px;display:flex;gap:14px;flex-wrap:wrap">
+          <div><div class="room-lbl">📅 Date</div><div style="font-size:13px;font-weight:600">${m.date||'TBD'}</div></div>
+          <div><div class="room-lbl">⏰ Time</div><div style="font-size:13px;font-weight:600">${m.time||'TBD'}</div></div>
+          ${m.entry?`<div><div class="room-lbl">💰 Entry</div><div style="font-size:13px;font-weight:600;color:var(--gold)">${m.entry}</div></div>`:''}
+          ${m.prize?`<div><div class="room-lbl">🏆 Prize</div><div style="font-size:13px;font-weight:600;color:var(--gold)">${m.prize}</div></div>`:''}
+          ${m.maxTeams?`<div><div class="room-lbl">👥 Slots</div><div style="font-size:13px;font-weight:600;color:var(--cyan)">${(m.brTeamIds||[]).length}/${m.maxTeams}</div></div>`:''}
+        </div>
+        <div style="padding:0 16px 12px">
+          ${isBanned?`<span style="font-family:var(--font-mono);font-size:10px;color:var(--red)">🚫 TEAM BANNED FROM THIS MATCH</span>`
+            :isClosed?`<span style="font-family:var(--font-mono);font-size:10px;color:var(--muted)">// MATCH CLOSED</span>`
+            :full?`<span style="font-family:var(--font-mono);font-size:10px;color:var(--muted)">// SLOTS FULL</span>`
+            :isCap?`<button class="btn btn-green btn-sm" onclick="openDailyJoin('${m.id}')">⚡ JOIN MATCH</button>`
+            :`<span style="font-family:var(--font-mono);font-size:10px;color:var(--muted)">// SIRF CAPTAIN JOIN KAR SAKTA HAI</span>`}
+        </div>
+      </div>`;
+    });
+  }
+
+  html+=`</div><div id="daily-panel-reg" style="display:none">`;
+
+  if(!registered.length){
+    html+=`<div style="text-align:center;padding:30px;color:var(--muted);font-family:var(--font-mono);font-size:10px;letter-spacing:2px">// ABHI KISI MATCH MEIN REGISTERED NAHI</div>`;
+  } else {
+    registered.forEach(({m,req})=>{
+      const approved=req.status==='approved';
+      html+=`<div class="match-block" style="border-left:3px solid ${approved?'var(--cyan)':req.status==='rejected'?'var(--red)':'var(--gold)'};margin-bottom:10px">
+        <div class="match-top">
+          <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+            <span class="match-type-badge mt-daily">📅 DAILY</span>
+            ${m.label?`<span style="font-weight:700;font-size:13px;color:#fff;letter-spacing:1px">${m.label}</span>`:''}
+            ${(m.gameMode||m.matchFormat)?`<span style="font-family:var(--font-mono);font-size:9px;color:var(--orange);background:rgba(255,107,43,0.1);border:1px solid rgba(255,107,43,0.3);border-radius:3px;padding:2px 7px">${m.gameMode||''} ${m.matchFormat||''}</span>`:''}
+          </div>
+          <div style="display:flex;gap:6px;align-items:center">
+            <span class="badge ${m.status==='open'?'b-open':m.status==='ongoing'?'b-ongoing':'b-closed'}">${(m.status||'open').toUpperCase()}</span>
+            <span class="badge ${approved?'b-open':req.status==='rejected'?'b-closed':'b-ongoing'}">${approved?'✓ APPROVED':req.status==='rejected'?'✗ REJECTED':'⏳ PENDING'}</span>
+          </div>
+        </div>
+        ${(()=>{const slotNo=m.brSlots&&myTeam?Object.entries(m.brSlots).find(([,v])=>v===myTeam.id)?.[0]:null; return slotNo?`<div style="margin:8px 16px 0;background:linear-gradient(135deg,rgba(124,77,255,0.15),rgba(0,180,255,0.1));border:1px solid rgba(124,77,255,0.4);border-radius:6px;padding:8px 14px;display:flex;align-items:center;gap:10px"><span style="font-family:var(--font-mono);font-size:9px;color:var(--purple);letter-spacing:2px">YOUR SLOT</span><span style="font-family:var(--font-hd);font-size:22px;font-weight:900;color:var(--cyan)">#${slotNo}</span><span style="font-family:var(--font-mono);font-size:9px;color:var(--muted)">Room join karte waqt ye number yaad rakho</span></div>`:'';})()}
+        <div style="padding:6px 16px 10px;display:flex;gap:14px;flex-wrap:wrap">
+          <div><div class="room-lbl">📅 Date</div><div style="font-size:13px;font-weight:600">${m.date||'TBD'}</div></div>
+          <div><div class="room-lbl">⏰ Time</div><div style="font-size:13px;font-weight:600">${m.time||'TBD'}</div></div>
+          ${m.entry?`<div><div class="room-lbl">💰 Entry</div><div style="font-size:13px;font-weight:600;color:var(--gold)">${m.entry}</div></div>`:''}
+          ${m.prize?`<div><div class="room-lbl">🏆 Prize</div><div style="font-size:13px;font-weight:600;color:var(--gold)">${m.prize}</div></div>`:''}
+        </div>
+        ${approved&&m.roomReleased?`<div class="room-unlocked" style="margin:0 16px 12px">
+          <div style="display:flex;gap:20px;flex-wrap:wrap">
+            <div><div class="room-lbl">🔓 ROOM ID</div><div class="room-id-val">${m.roomId||'—'}</div></div>
+            <div><div class="room-lbl">🔑 PASSWORD</div><div class="room-pw-val">${m.roomPass||'—'}</div></div>
+          </div></div>`
+        :approved?`<div style="padding:0 16px 12px;font-family:var(--font-mono);font-size:10px;color:var(--muted)">⏳ Room match se pehle release hoga</div>`:''}
+        ${m.result?`<div class="result-banner" style="margin:0 16px 12px"><span>🏆</span><span class="result-banner-text">WINNER: ${m.result}</span></div>`:''}
+      </div>`;
+    });
+  }
+
+  html+=`</div>`;
+  return html;
+}
+
+function switchDailyTab(tab){
+  const aEl=g('dtab-avail'),rEl=g('dtab-reg');
+  if(aEl) aEl.className='page-tab'+(tab==='avail'?' active':'');
+  if(rEl) rEl.className='page-tab'+(tab==='reg'?' active':'');
+  const ap=g('daily-panel-avail'),rp=g('daily-panel-reg');
+  if(ap) ap.style.display=tab==='avail'?'block':'none';
+  if(rp) rp.style.display=tab==='reg'?'block':'none';
 }
 
 function renderMatchCard(m){
-  const isDaily=m.matchType==='daily';
+  const isDaily=m.matchType==='daily'||m.matchType==='DAILY';
   const accentColor=isDaily?'var(--green)':'var(--gold)';
   const typeBadgeClass=isDaily?'mt-daily':'mt-br';
   const typeLabel=isDaily?'DAILY':'TOURNAMENT';
@@ -1287,199 +1512,342 @@ function renderMatchCard(m){
     }
   }
 
+  const hasBrSlots=m.brSlots&&Object.keys(m.brSlots).length>0;
   const adminBtns=cu.role==='admin'?`<div style="padding:0 16px 12px;display:flex;gap:6px;flex-wrap:wrap">
     <button class="btn btn-cyan btn-xs" onclick="openMatchDetails('${m.id}')">⚙ MANAGE</button>
+    ${hasBrSlots?`<button class="btn btn-purple btn-xs" onclick="openSlotsPanel('${m.id}')">📋 SLOTS</button>`:''}
     <button class="btn btn-red btn-xs" onclick="delMatch('${m.id}')">DEL</button>
   </div>`:'';
 
-  const teamsDisplay=m.teams&&m.teams.length?
-    m.teams.map(tid=>{const t=DB.teams.find(x=>x.id===tid);return t?`<span style="font-family:var(--font-mono);font-size:10px;color:var(--cyan);margin-right:8px">• ${t.name}</span>`:''}).join('')
-    :'<span style="color:var(--muted);font-size:10px;font-family:var(--font-mono)">Teams TBD</span>';
+  // Support both m.teams[] array AND m.team1Id/m.team2Id fields
+  const t1Id=m.team1Id||(m.teams&&m.teams[0])||null;
+  const t2Id=m.team2Id||(m.teams&&m.teams[1])||null;
+  const t1=t1Id?DB.teams.find(x=>x.id===t1Id):null;
+  const t2=t2Id?DB.teams.find(x=>x.id===t2Id):null;
+  // Fallback: if team not in DB but name stored, create stub
+  const t1obj=t1||(m.team1?{name:m.team1,tag:''}:null);
+  const t2obj=t2||(m.team2?{name:m.team2,tag:''}:null);
 
-  return`<div class="match-block" style="border-left:3px solid ${accentColor}">
-    <div class="match-top">
-      <div>
-        <span class="match-type-badge ${typeBadgeClass}">${typeLabel}</span>
-        <span style="font-family:var(--font-mono);font-size:9px;color:var(--muted);margin-left:8px">${m.label||m.tournament||''}</span>
-      </div>
-      <div style="display:flex;gap:8px;align-items:center">
-        <span class="badge ${m.status==='open'?'b-open':m.status==='ongoing'?'b-ongoing':'b-closed'}">${(m.status||'open').toUpperCase()}</span>
-      </div>
-    </div>
-    <div style="padding:10px 16px 8px;display:flex;gap:16px;flex-wrap:wrap">
-      <div><div class="room-lbl">📅 Date</div><div style="font-size:14px;font-weight:600;color:#fff">${m.date||'TBD'}</div></div>
-      <div><div class="room-lbl">⏰ Time</div><div style="font-size:14px;font-weight:600;color:#fff">${m.time||'TBD'}</div></div>
-      <div><div class="room-lbl">🗺 Map</div><div style="font-size:14px;font-weight:600;color:#fff">${m.map||'TBD'}</div></div>
-      ${m.entry?`<div><div class="room-lbl">💰 Entry</div><div style="font-size:14px;font-weight:600;color:var(--gold)">${m.entry}</div></div>`:''}
-      ${m.prize?`<div><div class="room-lbl">🏆 Prize</div><div style="font-size:14px;font-weight:600;color:var(--gold)">${m.prize}</div></div>`:''}
-    </div>
-    <div style="padding:4px 16px 10px">
-      <div class="room-lbl">Teams</div>
-      <div style="margin-top:4px">${teamsDisplay}</div>
-    </div>
-    ${m.result?`<div class="result-banner" style="margin:0 16px 10px"><span style="font-size:16px">🏆</span><span class="result-banner-text">WINNER: ${m.result}</span></div>`:''}
-    ${roomSection}
-    ${joinSection}
-    ${adminBtns}
-  </div>`;
+  const isMyMatch=(()=>{
+    if(cu.role==='admin') return false;
+    const mt=DB.teams.find(t=>t.captainId===cu.id||t.members?.includes(cu.id));
+    if(!mt) return false;
+    return (m.teams&&m.teams.includes(mt.id))||(m.team1Id===mt.id)||(m.team2Id===mt.id)||((m.brTeamIds||[]).includes(mt.id));
+  })();
+
+  const hexBadge=(t,align)=>{
+    const isRight=align==='right';
+    return '<div style="display:flex;align-items:center;gap:10px;'+(isRight?'flex-direction:row-reverse;':'')+'">'
+      +'<div style="width:40px;height:40px;flex-shrink:0;display:flex;align-items:center;justify-content:center;'
+      +'background:linear-gradient(135deg,rgba(139,92,246,0.25),rgba(80,40,180,0.15));'
+      +'border:1.5px solid rgba(139,92,246,0.5);'
+      +'clip-path:polygon(50% 0%,93% 25%,93% 75%,50% 100%,7% 75%,7% 25%);'
+      +'font-weight:900;font-size:15px;color:#8b5cf6;">'
+      +(t?t.name[0].toUpperCase():'?')
+      +'</div>'
+      +'<div style="'+(isRight?'text-align:right':'')+'">'
+      +'<div style="font-weight:800;font-size:13px;letter-spacing:1.5px;color:#fff">'+(t?t.name:'TBD')+'</div>'
+      +'<div style="font-size:10px;color:var(--muted);margin-top:1px">'+(t?t.tag||'':'')+'</div>'
+      +'</div></div>';
+  };
+
+  const borderCol=isMyMatch?'rgba(0,207,255,0.4)':isDaily?'rgba(0,230,118,0.25)':'rgba(139,92,246,0.25)';
+  const glowCol=isDaily?'rgba(0,200,100,0.12)':'rgba(139,92,246,0.15)';
+
+  return '<div style="border:1px solid '+borderCol+';border-radius:10px;margin-bottom:14px;overflow:hidden;background:rgba(6,10,28,0.95)">'
+
+    // ── HEADER ──
+    +'<div style="position:relative;min-height:85px;display:flex;flex-direction:column;justify-content:flex-end;background:linear-gradient(135deg,rgba(8,15,40,0.98),rgba(15,8,35,0.95));border-bottom:1px solid rgba(255,255,255,0.06);overflow:hidden;">'
+    +'<div style="position:absolute;inset:0;background:radial-gradient(ellipse at 80% 50%,'+glowCol+' 0%,transparent 70%)"></div>'
+    +'<div style="position:relative;z-index:1;padding:14px 16px 12px;display:flex;align-items:flex-end;justify-content:space-between;gap:8px">'
+    +'<div>'
+    +'<div style="font-weight:800;font-size:15px;letter-spacing:2px;color:#fff">'+(isDaily?'📅 ':'🏆 ')+(m.label||m.tournament||m.name||(isDaily?'DAILY MATCH':'TOURNAMENT MATCH'))+'</div>'
+    +(m.round?'<div style="font-family:var(--font-mono);font-size:9px;color:'+(isDaily?'var(--green)':'var(--purple)')+';letter-spacing:3px;margin-top:5px;display:flex;align-items:center;gap:6px">'
+    +'<div style="width:14px;height:1px;background:currentColor;opacity:.5"></div>'+m.round+'<div style="width:40px;height:1px;background:currentColor;opacity:.3"></div></div>':'')
+    +'</div>'
+    +'<span class="badge '+(m.status==='open'?'b-open':m.status==='ongoing'?'b-ongoing':'b-closed')+'">'+(m.status||'open').toUpperCase()+'</span>'
+    +'</div></div>'
+
+    // ── INFO ROW ──
+    +'<div style="padding:10px 16px;display:flex;gap:10px;flex-wrap:wrap;border-bottom:1px solid rgba(255,255,255,0.05);background:rgba(255,255,255,0.02);align-items:center">'
+    +(isMyMatch?'<span style="background:rgba(0,207,255,0.1);color:#00cfff;border:1px solid rgba(0,207,255,0.3);border-radius:4px;font-size:9px;font-weight:700;letter-spacing:1.5px;padding:3px 8px">YOUR MATCH</span>':'')
+    +'<span style="font-family:var(--font-mono);font-size:11px;color:var(--cyan)">📅 '+(m.date||'TBD')+'</span>'
+    +'<span style="font-family:var(--font-mono);font-size:11px;color:var(--gold)">⏰ '+(m.time||'TBD')+'</span>'
+    +(m.map?'<span style="font-family:var(--font-mono);font-size:11px;color:var(--muted)">🗺 '+m.map+'</span>':'')
+    +((m.gameMode||m.matchFormat||m.mode||m.format)?'<span style="background:rgba(255,107,43,0.1);color:var(--orange);border:1px solid rgba(255,107,43,0.3);border-radius:4px;font-size:9px;font-weight:700;padding:3px 8px">🎮 '+((m.gameMode||m.mode)||'')+((m.matchFormat||m.format)?' '+(m.matchFormat||m.format):'')+'</span>':'')
+    +(m.entry?'<span style="font-family:var(--font-mono);font-size:11px;color:var(--gold)">💰 '+m.entry+'</span>':'')
+    +(m.prize?'<span style="font-family:var(--font-mono);font-size:11px;color:var(--gold)">🏆 '+m.prize+'</span>':'')
+    +(m.maxTeams?(()=>{ const joined=(m.brTeamIds||[]).length; const confirmed=isDaily?DB.requests.filter(r=>r.matchId===m.id&&r.status==='approved').length:joined; const full=joined>=m.maxTeams; return '<span style="font-family:var(--font-mono);font-size:11px;color:'+(full?'var(--red)':'var(--cyan)')+'">👥 '+confirmed+'/'+m.maxTeams+(full?' FULL':' slots')+'</span>'; })():'')
+    +'</div>'
+
+    // ── TEAMS SECTION (BR grid OR classic VS) ──
+    +(()=>{
+      const isBR=(m.maxTeams&&m.maxTeams>2)||(m.matchFormat==='BR')||(m.gameMode==='BR');
+      if(isBR){
+        // BR: show joined teams as grid chips
+        const joinedIds=m.brTeamIds||[];
+        const joinedTeams=joinedIds.map(id=>DB.teams.find(t=>t.id===id)).filter(Boolean);
+        const max=m.maxTeams||12;
+        const slots=m.brSlots||{};
+        if(!joinedTeams.length) return '';
+        // Build team chips sorted by slot
+        const sorted=joinedTeams.slice().sort((a,b)=>{
+          const sa=parseInt(Object.entries(slots).find(([,v])=>v===a.id)?.[0]||99);
+          const sb=parseInt(Object.entries(slots).find(([,v])=>v===b.id)?.[0]||99);
+          return sa-sb;
+        });
+        const chips=sorted.map(t=>{
+          const slotNo=Object.entries(slots).find(([,v])=>v===t.id)?.[0]||'?';
+          const isWinner=m.result&&m.result===t.name;
+          return '<div style="display:flex;align-items:center;gap:6px;background:'+(isWinner?'rgba(0,230,118,0.08)':'rgba(255,255,255,0.03)')+';border:1px solid '+(isWinner?'rgba(0,230,118,0.4)':'rgba(255,255,255,0.08)')+';border-radius:6px;padding:5px 8px;min-width:0">'
+            +'<span style="font-family:var(--font-mono);font-size:9px;color:var(--purple);min-width:18px">#'+slotNo+'</span>'
+            +'<div style="width:22px;height:22px;flex-shrink:0;display:flex;align-items:center;justify-content:center;background:linear-gradient(135deg,rgba(139,92,246,0.3),rgba(80,40,180,0.2));clip-path:polygon(50% 0%,93% 25%,93% 75%,50% 100%,7% 75%,7% 25%);font-weight:900;font-size:10px;color:#b388ff">'+t.name[0].toUpperCase()+'</div>'
+            +'<div style="min-width:0"><div style="font-weight:700;font-size:11px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:80px">'+(isWinner?'🏆 ':'')+t.name+'</div>'
+            +'<div style="font-family:var(--font-mono);font-size:9px;color:var(--muted)">'+t.tag+'</div></div>'
+            +'</div>';
+        }).join('');
+        const remaining=max-joinedTeams.length;
+        const emptyChips=remaining>0?Array.from({length:Math.min(remaining,max-joinedTeams.length)},(_,i)=>
+          '<div style="display:flex;align-items:center;gap:5px;background:rgba(255,255,255,0.01);border:1px dashed rgba(255,255,255,0.07);border-radius:6px;padding:5px 8px">'
+          +'<span style="font-family:var(--font-mono);font-size:9px;color:rgba(255,255,255,0.15)">#'+(joinedTeams.length+i+1)+'</span>'
+          +'<span style="font-family:var(--font-mono);font-size:9px;color:rgba(255,255,255,0.12)">OPEN</span></div>'
+        ).join(''):'';
+        return '<div style="padding:10px 14px 12px;border-top:1px solid rgba(255,255,255,0.05)">'
+          +'<div style="font-family:var(--font-mono);font-size:8px;color:var(--purple);letter-spacing:2px;margin-bottom:8px">🎯 REGISTERED TEAMS</div>'
+          +'<div style="display:flex;flex-wrap:wrap;gap:6px">'+chips+emptyChips+'</div>'
+          +'</div>';
+      } else {
+        // Classic 1v1 VS
+        if(!t1obj&&!t2obj) return '';
+        return '<div style="padding:12px 14px;display:grid;grid-template-columns:1fr auto 1fr;align-items:center;gap:8px">'
+          +'<div style="background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.07);border-radius:8px;padding:10px 12px;'+(m.result&&m.result===t1obj?.name?'border-color:rgba(0,230,118,0.4);background:rgba(0,230,118,0.05)':'')+'">'
+          +hexBadge(t1obj,'left')+'</div>'
+          +'<div style="font-family:var(--font-hd);font-size:18px;font-weight:900;background:linear-gradient(135deg,var(--cyan),var(--purple));-webkit-background-clip:text;-webkit-text-fill-color:transparent;text-align:center">VS</div>'
+          +'<div style="background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.07);border-radius:8px;padding:10px 12px;'+(m.result&&m.result===t2obj?.name?'border-color:rgba(0,230,118,0.4);background:rgba(0,230,118,0.05)':'')+'">'
+          +hexBadge(t2obj,'right')+'</div>'
+          +'</div>';
+      }
+    })()
+
+    // ── RESULT ──
+    +(m.result?'<div class="result-banner" style="margin:0 14px 10px"><span style="font-size:16px">🏆</span><span class="result-banner-text">WINNER: '+m.result+'</span></div>':'')
+
+    // ── ROOM ──
+    +roomSection
+
+    // ── LOCKED msg ──
+    +(!m.roomId&&!m.roomPass&&cu.role!=='admin'&&(isMyMatch||(isDaily&&joinSection.includes('APPROVED')))?
+    '<div style="margin:0 14px 12px;padding:10px 14px;background:rgba(244,67,54,0.07);border:1px solid rgba(244,67,54,0.2);border-radius:6px;display:flex;align-items:center;gap:10px">'
+    +'<span style="font-size:15px">🔒</span>'
+    +'<span style="font-family:var(--font-mono);font-size:10px;color:var(--red);letter-spacing:1px">Room ID will be released by admin before match</span>'
+    +'</div>':'')
+
+    +joinSection
+    +adminBtns
+    +'</div>';
 }
 
 // ── ADMIN: Choose match type to create ──
-function openAddMatchType(){
+// ── ADMIN: New Match Modal (unified) ──
+let _nmType='daily', _nmMode='BR', _nmFormat='SQUAD';
+
+function openAddMatchType(){ _nmType='daily'; _nmMode='BR'; _nmFormat='SQUAD'; _renderNewMatchModal(); }
+
+function _renderNewMatchModal(){
+  const isDailyT=_nmType==='daily';
+  const isTourT=_nmType==='tournament';
+  const isCS=_nmMode==='CS';
+  const qrData=DB._d.settings?.defaultQr||'';
+
+  const selType='background:rgba(0,180,255,0.15);border-color:rgba(0,180,255,0.6);color:#00b4ff;';
+  const unsel='background:rgba(255,255,255,0.03);border-color:rgba(255,255,255,0.1);color:#607d8b;';
+  const selPurp='background:rgba(124,77,255,0.2);border-color:rgba(124,77,255,0.6);color:#7c4dff;';
+
+  const tourOptions=DB.tournaments.map(t=>`<option value="${t.id}">${t.name}</option>`).join('');
+  const seasonOptions=DB.seasons.map(s=>`<option value="${s.id}">${s.name}</option>`).join('');
+
   openMo(`<button class="mo-close" onclick="closeMo()">✕</button>
     <div class="mo-title">+ NEW MATCH</div>
-    <p style="color:var(--muted);font-size:13px;margin-bottom:18px">Match ka type choose karo:</p>
-    <div style="display:flex;flex-direction:column;gap:10px">
-      <div onclick="openAddDailyMatch()" style="cursor:pointer;background:rgba(0,230,118,0.05);border:1px solid rgba(0,230,118,0.25);padding:16px;border-radius:6px;transition:all .2s">
-        <div style="font-size:18px;margin-bottom:6px">📅 DAILY MATCH</div>
-        <div style="font-family:var(--font-mono);font-size:10px;color:var(--muted);line-height:1.7">• Admin match banata hai<br>• Teams seedha join karte hain<br>• Admin payment check karke approve karta hai<br>• Room details approved teams ko milti hain</div>
-      </div>
-      <div onclick="openAddTournamentMatch()" style="cursor:pointer;background:rgba(255,193,7,0.05);border:1px solid rgba(255,193,7,0.25);padding:16px;border-radius:6px;transition:all .2s">
-        <div style="font-size:18px;margin-bottom:6px">🏆 TOURNAMENT MATCH</div>
-        <div style="font-family:var(--font-mono);font-size:10px;color:var(--muted);line-height:1.7">• Pehle tournament hota hai, teams join karti hain<br>• Admin manually teams select karta hai match ke liye<br>• Room details selected teams ko milti hain</div>
-      </div>
-    </div>`);
-}
 
-// ── ADMIN: Create Daily Match ──
-function openAddDailyMatch(){
-  closeMo();
-  const qrData=DB._d.settings?.defaultQr||'';
-  openMo(`<button class="mo-close" onclick="closeMo()">✕</button>
-    <div class="mo-title">📅 NEW DAILY MATCH</div>
-    <label class="fl">Match Label / Name</label>
-    <input class="fi" id="dm-lbl" placeholder="e.g. Thursday Night Battle"/>
-    <label class="fl">Date</label>
-    <input class="fi" id="dm-date" placeholder="e.g. 12 June 2026"/>
-    <label class="fl">Time</label>
-    <input class="fi" id="dm-time" placeholder="e.g. 9:00 PM"/>
-    <label class="fl">Map</label>
-    <input class="fi" id="dm-map" placeholder="Bermuda / Kalahari / Purgatory"/>
-    <label class="fl">Max Teams</label>
-    <input class="fi" type="number" id="dm-max" value="12"/>
-    <label class="fl">Entry Fee (type 'Free' if no fee)</label>
-    <input class="fi" id="dm-entry" placeholder="e.g. ₹10 / Free"/>
-    <label class="fl">Prize Pool</label>
-    <input class="fi" id="dm-prize" placeholder="e.g. ₹500"/>
-    <label class="fl">📱 Payment QR Code</label>
-    <div id="dm-qr-preview-wrap" style="margin-bottom:8px">
-      ${qrData?`<img src="${qrData}" style="width:140px;height:140px;object-fit:contain;border:1px solid rgba(255,215,0,0.3);cursor:pointer" onclick="g('dm-qr-file').click()" title="Click to change"/>`:`<div style="background:rgba(255,215,0,0.03);border:2px dashed rgba(255,215,0,0.2);width:140px;height:140px;display:flex;align-items:center;justify-content:center;font-family:var(--font-mono);font-size:9px;color:var(--muted);letter-spacing:1px;cursor:pointer;flex-direction:column;gap:6px" onclick="g('dm-qr-file').click()"><span style="font-size:24px">📱</span>CLICK TO UPLOAD QR</div>`}
+    <label class="fl">MATCH TYPE</label>
+    <div style="display:flex;gap:8px;margin-bottom:13px">
+      <div onclick="_nmType='daily';_renderNewMatchModal()" style="cursor:pointer;flex:1;padding:14px 8px;text-align:center;border:1px solid;border-radius:6px;${isDailyT?selType:unsel}">
+        <div style="font-size:22px">📅</div><div style="font-family:var(--font-mono);font-size:9px;letter-spacing:2px;margin-top:4px">DAILY MATCH</div>
+      </div>
+      <div onclick="_nmType='tournament';_renderNewMatchModal()" style="cursor:pointer;flex:1;padding:14px 8px;text-align:center;border:1px solid;border-radius:6px;${isTourT?selType:unsel}">
+        <div style="font-size:22px">🏆</div><div style="font-family:var(--font-mono);font-size:9px;letter-spacing:2px;margin-top:4px">TOURNAMENT</div>
+      </div>
     </div>
-    <input type="file" id="dm-qr-file" accept="image/*" style="display:none" onchange="previewDmQR(event)"/>
-    <input type="hidden" id="dm-qr-data" value="${qrData}"/>
-    <div class="err-msg" id="dm-err"></div>
-    <button class="btn btn-green btn-full" onclick="createDailyMatch()">⚡ CREATE DAILY MATCH</button>`);
+
+    <label class="fl">GAME MODE</label>
+    <div style="display:flex;gap:8px;margin-bottom:13px">
+      <div onclick="_nmMode='BR';_renderNewMatchModal()" style="cursor:pointer;flex:1;padding:12px 8px;text-align:center;border:1px solid;border-radius:6px;${_nmMode==='BR'?selType:unsel}">
+        <div style="font-size:20px">🎯</div><div style="font-family:var(--font-mono);font-size:9px;letter-spacing:2px;margin-top:4px">BATTLE ROYALE</div>
+      </div>
+      <div onclick="_nmMode='CS';_renderNewMatchModal()" style="cursor:pointer;flex:1;padding:12px 8px;text-align:center;border:1px solid;border-radius:6px;${isCS?selType:unsel}">
+        <div style="font-size:20px">⚔️</div><div style="font-family:var(--font-mono);font-size:9px;letter-spacing:2px;margin-top:4px">CS STYLE</div>
+      </div>
+    </div>
+
+    <label class="fl">SQUAD FORMAT</label>
+    <div style="display:flex;gap:8px;margin-bottom:13px">
+      <div onclick="_nmFormat='SQUAD';_renderNewMatchModal()" style="cursor:pointer;flex:1;padding:10px 6px;text-align:center;border:1px solid;border-radius:6px;${_nmFormat==='SQUAD'?selPurp:unsel}">
+        <div style="font-size:18px">👥</div><div style="font-family:var(--font-mono);font-size:9px;margin-top:3px">SQUAD</div>
+      </div>
+      <div onclick="_nmFormat='DUO';_renderNewMatchModal()" style="cursor:pointer;flex:1;padding:10px 6px;text-align:center;border:1px solid;border-radius:6px;${_nmFormat==='DUO'?selPurp:unsel}">
+        <div style="font-size:18px">🤝</div><div style="font-family:var(--font-mono);font-size:9px;margin-top:3px">DUO</div>
+      </div>
+      <div onclick="_nmFormat='SOLO';_renderNewMatchModal()" style="cursor:pointer;flex:1;padding:10px 6px;text-align:center;border:1px solid;border-radius:6px;${_nmFormat==='SOLO'?selPurp:unsel}">
+        <div style="font-size:18px">🎮</div><div style="font-family:var(--font-mono);font-size:9px;margin-top:3px">SOLO</div>
+      </div>
+    </div>
+
+    <label class="fl">MAXIMUM TEAMS</label>
+    <input class="fi" type="number" id="nm-max" value="${isCS?2:12}"/>
+
+    ${isTourT?`
+    <label class="fl">TOURNAMENT / SEASON</label>
+    <select class="fi" id="nm-container" onchange="_nmRefreshTeams()">
+      <option value="">-- None --</option>${tourOptions}${seasonOptions}
+    </select>
+    <label class="fl">ROUND / LABEL</label>
+    <select class="fi" id="nm-round">
+      <option>Round 1</option><option>Round 2</option><option>Quarter Finals</option>
+      <option>Semi Finals</option><option>Finals</option>
+    </select>
+    <label class="fl" style="color:var(--cyan)">// SELECT TEAMS</label>
+    <div style="display:flex;gap:6px;margin-bottom:8px">
+      <button class="btn btn-ghost btn-xs" onclick="_nmSelectAll()">✓ ALL</button>
+      <button class="btn btn-ghost btn-xs" onclick="_nmClearAll()">✕ CLEAR</button>
+    </div>
+    <div id="nm-teams-list" style="max-height:220px;overflow-y:auto;background:#111;border:1px solid rgba(26,111,255,0.2);padding:8px;border-radius:4px;margin-bottom:12px">
+      ${_buildTeamsList('', isCS)}
+    </div>`:`
+    <label class="fl">MATCH LABEL / NAME</label>
+    <input class="fi" id="nm-lbl" placeholder="e.g. Thursday Night Battle"/>
+    <label class="fl">ENTRY FEE (FREE if no fee)</label>
+    <input class="fi" id="nm-entry" placeholder="e.g. ₹10 / Free"/>
+    <label class="fl">PRIZE POOL</label>
+    <input class="fi" id="nm-prize" placeholder="e.g. ₹500"/>
+    <label class="fl">📱 PAYMENT QR CODE</label>
+    <div id="nm-qr-wrap" style="margin-bottom:8px">
+      ${qrData?`<img src="${qrData}" style="width:120px;height:120px;object-fit:contain;border:1px solid rgba(255,215,0,0.3);cursor:pointer" onclick="g('nm-qr-file').click()"/>`
+      :`<div style="background:rgba(255,215,0,0.03);border:2px dashed rgba(255,215,0,0.2);width:120px;height:120px;display:flex;align-items:center;justify-content:center;font-family:var(--font-mono);font-size:9px;color:var(--muted);cursor:pointer;flex-direction:column;gap:4px" onclick="g('nm-qr-file').click()"><span style="font-size:20px">📱</span>UPLOAD QR</div>`}
+    </div>
+    <input type="file" id="nm-qr-file" accept="image/*" style="display:none" onchange="_nmPreviewQR(event)"/>
+    <input type="hidden" id="nm-qr-data" value="${qrData}"/>`}
+
+    <div style="display:flex;gap:10px">
+      <div style="flex:1"><label class="fl">DATE</label><input class="fi" id="nm-date" placeholder="e.g. 15 July 2026"/></div>
+      <div style="flex:1"><label class="fl">TIME</label><input class="fi" id="nm-time" placeholder="e.g. 8:30 PM"/></div>
+    </div>
+    <div class="err-msg" id="nm-err"></div>
+    <button class="btn btn-cyan btn-full" onclick="_createMatch()">⚡ CREATE MATCH</button>`);
 }
 
-function previewDmQR(e){
+function _buildTeamsList(containerId, csMode){
+  let teams=DB.teams;
+  if(containerId){
+    const regIds=DB.registrations.filter(r=>r.tournamentId===containerId).map(r=>r.teamId);
+    teams=teams.filter(t=>regIds.includes(t.id));
+  }
+  if(!teams.length) return`<div style="text-align:center;padding:20px;color:var(--muted);font-family:var(--font-mono);font-size:10px">// NO TEAMS FOUND</div>`;
+  return teams.map(t=>`
+    <div style="display:flex;align-items:center;gap:10px;padding:7px 0;border-bottom:1px solid rgba(255,255,255,0.04)">
+      <input type="checkbox" class="nm-team-cb" id="nm-t-${t.id}" value="${t.id}" style="width:16px;height:16px;cursor:pointer;accent-color:var(--cyan)" ${csMode?'onchange="_nmCSLimit(this)"':''}/>
+      <label for="nm-t-${t.id}" style="cursor:pointer;flex:1">
+        <div style="font-size:13px;font-weight:600">${t.name} <span style="font-family:var(--font-mono);font-size:9px;color:var(--purple)">[${t.tag}]</span></div>
+        <div style="font-family:var(--font-mono);font-size:9px;color:var(--muted)">${t.members.length+1} members</div>
+      </label>
+    </div>`).join('');
+}
+
+function _nmRefreshTeams(){
+  const cid=g('nm-container')?.value||'';
+  const list=g('nm-teams-list');
+  if(list) list.innerHTML=_buildTeamsList(cid, _nmMode==='CS');
+}
+function _nmCSLimit(cb){
+  const checked=[...document.querySelectorAll('.nm-team-cb:checked')];
+  if(checked.length>2){cb.checked=false;showToast('⚠ CS MODE: SIRF 2 TEAMS',true);}
+}
+function _nmSelectAll(){
+  document.querySelectorAll('.nm-team-cb').forEach(cb=>cb.checked=true);
+  if(_nmMode==='CS'){[...document.querySelectorAll('.nm-team-cb')].forEach((cb,i)=>cb.checked=i<2);showToast('⚠ CS MODE: SIRF 2 TEAMS',true);}
+}
+function _nmClearAll(){document.querySelectorAll('.nm-team-cb').forEach(cb=>cb.checked=false);}
+function _nmPreviewQR(e){
   const f=e.target.files[0];if(!f)return;
-  const reader=new FileReader();
-  reader.onload=function(ev){
-    const data=ev.target.result;
-    if(g('dm-qr-data'))g('dm-qr-data').value=data;
-    if(g('dm-qr-preview-wrap'))g('dm-qr-preview-wrap').innerHTML=`<img src="${data}" style="width:140px;height:140px;object-fit:contain;border:1px solid rgba(255,215,0,0.3);cursor:pointer" onclick="g('dm-qr-file').click()" title="Click to change"/>`;
-  };reader.readAsDataURL(f);
+  const r=new FileReader();
+  r.onload=ev=>{
+    if(g('nm-qr-data'))g('nm-qr-data').value=ev.target.result;
+    if(g('nm-qr-wrap'))g('nm-qr-wrap').innerHTML=`<img src="${ev.target.result}" style="width:120px;height:120px;object-fit:contain;border:1px solid rgba(255,215,0,0.3);cursor:pointer" onclick="g('nm-qr-file').click()"/>`;
+  };r.readAsDataURL(f);
+}
+function _createMatch(){
+  const date=v('nm-date');
+  if(!date){set('nm-err','⚠ DATE REQUIRED');return;}
+  if(_nmType==='daily'){
+    const lbl=v('nm-lbl');
+    if(!lbl){set('nm-err','⚠ MATCH LABEL REQUIRED');return;}
+    const entry=v('nm-entry');
+    const needsPay=entry&&entry.toLowerCase()!=='free'&&entry.trim()!=='';
+    const qrImg=g('nm-qr-data')?.value||'';
+    if(needsPay&&!qrImg){set('nm-err','⚠ PAID MATCH KE LIYE QR REQUIRED');return;}
+    DB.matches.push({id:'m'+Date.now(),matchType:'daily',gameMode:_nmMode,matchFormat:_nmFormat,
+      label:lbl,date,time:v('nm-time'),map:'',maxTeams:parseInt(v('nm-max'))||12,
+      entry,prize:v('nm-prize'),qrImage:qrImg,status:'open',teams:[],result:'',createdAt:Date.now()});
+    DB.save();closeMo();showToast('✓ DAILY MATCH CREATED',false,'ok');
+    pMatches(g('mc'));setTimeout(()=>switchMatchTab('daily'),50);
+  } else {
+    const sel=[...document.querySelectorAll('.nm-team-cb:checked')].map(el=>el.value);
+    if(_nmMode==='CS'&&sel.length!==2){set('nm-err','⚠ CS MODE MEIN EXACTLY 2 TEAMS CHAHIYE');return;}
+    const round=g('nm-round')?.value||'Round 1';
+    const cid=g('nm-container')?.value||'';
+    const container=DB.tournaments.find(t=>t.id===cid)||DB.seasons.find(s=>s.id===cid);
+    DB.matches.push({id:'m'+Date.now(),matchType:'tournament',gameMode:_nmMode,matchFormat:_nmFormat,
+      tournament:container?container.name:'',containerId:cid,round,label:round,
+      date,time:v('nm-time'),map:'',prize:'',teams:sel,status:'open',result:'',createdAt:Date.now()});
+    DB.save();closeMo();showToast('✓ TOURNAMENT MATCH CREATED',false,'ok');
+    pMatches(g('mc'));
+  }
+}
+function openAddTournamentMatch(){_nmType='tournament';_nmMode='BR';_nmFormat='SQUAD';_renderNewMatchModal();}
+function openAddDailyMatch(){_nmType='daily';_nmMode='BR';_nmFormat='SQUAD';_renderNewMatchModal();}
+function previewDmQR(e){_nmPreviewQR(e);}
+function createDailyMatch(){_createMatch();}
+function createTournamentMatch(){_createMatch();}
+
+// ── Slot Assignment Helper ──
+function assignSlot(m,teamId){
+  if(!m.brSlots)m.brSlots={};
+  const existing=Object.entries(m.brSlots).find(([,v])=>v===teamId);
+  if(existing)return parseInt(existing[0]);
+  const max=m.maxTeams||12;
+  for(let i=1;i<=max;i++){if(!m.brSlots[i]){m.brSlots[i]=teamId;return i;}}
+  return null;
 }
 
-function createDailyMatch(){
-  const lbl=v('dm-lbl'),date=v('dm-date'),time=v('dm-time');
-  if(!lbl||!date){set('dm-err','⚠ LABEL & DATE REQUIRED');return;}
-  const entry=v('dm-entry');
-  const needsPay=entry&&entry.toLowerCase()!=='free'&&entry.trim()!=='';
-  const qrImg=g('dm-qr-data')?.value||'';
-  if(needsPay&&!qrImg){set('dm-err','⚠ PAYMENT QR REQUIRED FOR PAID MATCH');return;}
-  DB.matches.push({
-    id:'m'+Date.now(),
-    matchType:'daily',
-    label:lbl,
-    date,time,
-    map:v('dm-map'),
-    maxTeams:parseInt(v('dm-max'))||12,
-    entry,
-    prize:v('dm-prize'),
-    qrImage:qrImg,
-    status:'open',
-    teams:[],
-    result:'',
-    createdAt:Date.now()
-  });
-  DB.save();closeMo();showToast('✓ DAILY MATCH CREATED',false,'ok');pMatches(g('mc'));
-}
-
-// ── ADMIN: Create Tournament Match ──
-function openAddTournamentMatch(){
-  closeMo();
-  const regTeams=DB.teams;
-  openMo(`<button class="mo-close" onclick="closeMo()">✕</button>
-    <div class="mo-title">🏆 NEW TOURNAMENT MATCH</div>
-    <label class="fl">Tournament Name</label>
-    <input class="fi" id="tm-tour" placeholder="e.g. ZoneX Season 3"/>
-    <label class="fl">Match Label / Round</label>
-    <input class="fi" id="tm-lbl" placeholder="e.g. Quarter Finals"/>
-    <label class="fl">Date</label>
-    <input class="fi" id="tm-date" placeholder="e.g. 15 June 2026"/>
-    <label class="fl">Time</label>
-    <input class="fi" id="tm-time" placeholder="e.g. 8:00 PM"/>
-    <label class="fl">Map</label>
-    <input class="fi" id="tm-map" placeholder="Bermuda / Kalahari"/>
-    <label class="fl">Prize Pool</label>
-    <input class="fi" id="tm-prize" placeholder="e.g. ₹5,000"/>
-    <label class="fl">Select Teams (✓ tick karo)</label>
-    <div id="tm-teams-list" style="max-height:200px;overflow-y:auto;background:#111;border:1px solid rgba(26,111,255,0.2);padding:8px;border-radius:4px;margin-bottom:12px">
-      ${regTeams.length?regTeams.map(t=>`
-        <div style="display:flex;align-items:center;gap:10px;padding:7px 0;border-bottom:1px solid rgba(255,255,255,0.04)">
-          <input type="checkbox" id="tm-team-${t.id}" value="${t.id}" style="width:16px;height:16px;cursor:pointer;accent-color:var(--cyan)"/>
-          <label for="tm-team-${t.id}" style="cursor:pointer;flex:1">
-            <div style="font-size:13px;font-weight:600">${t.name} <span style="font-family:var(--font-mono);font-size:9px;color:var(--purple)">${t.tag}</span></div>
-            <div style="font-family:var(--font-mono);font-size:9px;color:var(--muted)">${t.members.length} members</div>
-          </label>
-        </div>`).join('')
-      :'<div style="text-align:center;padding:20px;color:var(--muted);font-family:var(--font-mono);font-size:10px">// NO TEAMS REGISTERED YET</div>'}
-    </div>
-    <div class="err-msg" id="tm-err"></div>
-    <button class="btn btn-gold btn-full" onclick="createTournamentMatch()">⚡ CREATE TOURNAMENT MATCH</button>`);
-}
-
-function createTournamentMatch(){
-  const tour=v('tm-tour'),lbl=v('tm-lbl'),date=v('tm-date');
-  if(!tour||!date){set('tm-err','⚠ TOURNAMENT NAME & DATE REQUIRED');return;}
-  const selectedTeams=[...document.querySelectorAll('#tm-teams-list input[type=checkbox]:checked')].map(el=>el.value);
-  DB.matches.push({
-    id:'m'+Date.now(),
-    matchType:'tournament',
-    tournament:tour,
-    label:lbl,
-    date,time:v('tm-time'),
-    map:v('tm-map'),
-    prize:v('tm-prize'),
-    teams:selectedTeams,
-    status:'open',
-    result:'',
-    createdAt:Date.now()
-  });
-  DB.save();closeMo();showToast('✓ TOURNAMENT MATCH CREATED',false,'ok');pMatches(g('mc'));
-}
-
-// ── Captain: Join Daily Match (show QR card) ──
+// ── Captain: Join Daily Match with Razorpay ──
 function openDailyJoin(matchId){
   const m=DB.matches.find(x=>x.id===matchId);
+  if(!m){showToast('⚠ MATCH NOT FOUND',true);return;}
   const mt=DB.teams.find(t=>t.captainId===cu.id);
   if(!mt){showToast('⚠ PEHLE APNI TEAM BANAO',true);return;}
   const needsPay=m.entry&&m.entry.toLowerCase()!=='free'&&m.entry.trim()!=='';
+  const amt=needsPay?parseAmount(m.entry):0;
   openMo(`<button class="mo-close" onclick="closeMo()">✕</button>
     <div class="mo-title">⚡ JOIN DAILY MATCH</div>
 
-    <!-- Match Info -->
     <div style="background:rgba(0,230,118,0.04);border:1px solid rgba(0,230,118,0.2);padding:13px;border-radius:6px;margin-bottom:14px">
       <div style="font-family:var(--font-hd);font-size:15px;letter-spacing:2px;color:var(--green)">${m.label||'Daily Match'}</div>
       <div style="font-family:var(--font-mono);font-size:10px;color:var(--muted);margin-top:4px;line-height:1.8">
-        📅 ${m.date||'TBD'} &nbsp;⏰ ${m.time||'TBD'} &nbsp;🗺 ${m.map||'TBD'}
+        📅 ${m.date||'TBD'} &nbsp;⏰ ${m.time||'TBD'}
         ${m.entry?`<br>💰 Entry: <span style="color:var(--gold)">${m.entry}</span>`:''}
         ${m.prize?`<br>🏆 Prize: <span style="color:var(--gold)">${m.prize}</span>`:''}
       </div>
     </div>
 
-    <!-- Team Info -->
     <div style="background:rgba(191,95,255,0.04);border:1px solid rgba(191,95,255,0.12);padding:13px;border-radius:6px;margin-bottom:14px">
       <div style="font-family:var(--font-mono);font-size:9px;color:var(--purple);letter-spacing:2px;margin-bottom:5px">YOUR TEAM</div>
       <div style="font-family:var(--font-hd);font-size:16px;letter-spacing:2px">${mt.name} <span style="font-size:11px;color:var(--purple)">${mt.tag}</span></div>
@@ -1487,49 +1855,85 @@ function openDailyJoin(matchId){
     </div>
 
     ${needsPay?`
-    <!-- Payment QR Card -->
-    <div class="qr-area">
-      <div style="font-family:var(--font-mono);font-size:9px;color:var(--gold);letter-spacing:3px;margin-bottom:12px">// PAYMENT REQUIRED — ${m.entry}</div>
-      <div class="qr-img-wrap" id="djoin-qr-display">
-        ${m.qrImage?`<img src="${m.qrImage}" alt="Payment QR Code"/>`:`<div class="qr-placeholder-text">📱<br><br>QR CODE<br>NOT SET<br><br><span style="font-size:8px">Admin needs to add QR</span></div>`}
-      </div>
-      <div style="font-family:var(--font-mono);font-size:11px;color:var(--gold);margin-top:6px">Scan & Pay · Entry: ${m.entry}</div>
-      <div class="utr-area">
-        <div class="utr-lbl">// PAYMENT KE BAAD UTR / TRANSACTION ID ENTER KARO</div>
-        <input class="fi" type="text" id="djoin-utr" placeholder="e.g. UTR123456789012" style="margin-bottom:0"/>
-      </div>
-    </div>`:``}
+    <div style="background:rgba(255,193,7,0.06);border:1px solid rgba(255,193,7,0.25);padding:14px;border-radius:6px;margin-bottom:14px;text-align:center">
+      <div style="font-family:var(--font-mono);font-size:9px;color:var(--gold);letter-spacing:3px;margin-bottom:8px">// ENTRY FEE</div>
+      <div style="font-family:var(--font-hd);font-size:32px;font-weight:900;color:var(--gold)">₹${amt}</div>
+      <div style="font-family:var(--font-mono);font-size:9px;color:var(--muted);margin-top:4px">UPI · Card · NetBanking · Wallet</div>
+    </div>`:''}
 
-    <div class="err-msg" id="djoin-err"></div>
     <div style="background:rgba(0,180,255,0.05);border:1px solid rgba(0,180,255,0.15);padding:10px 12px;border-radius:4px;margin-bottom:12px;font-family:var(--font-mono);font-size:10px;color:var(--muted);line-height:1.7">
-      ⚠ Join request admin ko jayegi.<br>Admin payment check karke approve/reject karega.<br>Approval ke baad room ID & password milega.
+      ${needsPay?'💳 Payment hone ke baad join request admin ko jayegi.<br>':''}⚠ Admin approve karega · Room ID tab milega.
     </div>
-    <button class="btn btn-green btn-full" onclick="submitDailyJoin('${matchId}','${mt.id}',${needsPay})">📩 SEND JOIN REQUEST</button>`);
+    <div class="err-msg" id="djoin-err"></div>
+    <button class="btn btn-green btn-full" id="djoin-btn" onclick="submitDailyJoin('${matchId}','${mt.id}',${needsPay},${amt})">${needsPay?`💳 PAY ₹${amt} & JOIN`:'📩 SEND JOIN REQUEST'}</button>`);
 }
 
-function submitDailyJoin(matchId,teamId,needsPay){
+async function submitDailyJoin(matchId,teamId,needsPay,amt){
+  let paymentId='FREE';
   if(needsPay){
-    const utr=(g('djoin-utr')?.value||'').trim();
-    if(!utr){set('djoin-err','⚠ UTR / TRANSACTION ID ENTER KARO');return;}
+    const m=DB.matches.find(x=>x.id===matchId);
+    try{
+      const btn=g('djoin-btn');
+      if(btn){btn.disabled=true;btn.textContent='⏳ OPENING PAYMENT...';}
+      paymentId = await openRazorpay({
+        amount: amt,
+        description: 'Daily Match Entry: '+(m?.label||m?.date||'')
+      });
+    } catch(e){
+      const btn=g('djoin-btn');
+      if(btn){btn.disabled=false;btn.textContent=`💳 PAY ₹${amt} & JOIN`;}
+      if(e!=='dismissed') showToast('⚠ PAYMENT FAILED, TRY AGAIN',true);
+      return;
+    }
   }
-  const utr=g('djoin-utr')?.value||'';
   const m=DB.matches.find(x=>x.id===matchId);
   const mt=DB.teams.find(x=>x.id===teamId);
+
+  // Paid → auto approve, Free → admin approval chahiye
+  const isPaid = paymentId && paymentId !== 'FREE';
+  const autoStatus = isPaid ? 'approved' : 'pending';
+
   DB.requests.push({
     id:'djoin_'+Date.now(),
     type:'daily_join',
-    matchId,
-    teamId,
+    matchId,teamId,
     captainId:cu.id,
-    utr,
-    status:'pending',
+    paymentId,
+    status: autoStatus,
     at:Date.now(),
     toUserId:'admin1',
     fromUserId:cu.id,
     title:`📅 Daily Match Join: ${mt?.name||'Team'}`,
-    body:`Team: ${mt?.name||'—'} (${mt?.tag||'—'}) — Match: ${m?.label||m?.date||'—'}${utr?' — UTR: '+utr:''}`
+    body:`Team: ${mt?.name||'—'} (${mt?.tag||'—'}) — Match: ${m?.label||m?.date||'—'}${isPaid?' — Payment: '+paymentId:''}`
   });
-  DB.save();closeMo();showToast('✓ JOIN REQUEST SENT! ADMIN APPROVE KAREGA',false,'ok');pMatches(g('mc'));
+
+  // Auto approve hone par team match mein add karo + notification
+  if(isPaid){
+    if(!m.teams) m.teams=[];
+    if(!m.teams.includes(teamId)) m.teams.push(teamId);
+    // Assign slot number
+    const slotNo=assignSlot(m,teamId);
+    // Also add to brTeamIds if BR match
+    if(m.matchFormat==='BR'||m.gameMode==='BR'||(m.maxTeams&&m.maxTeams>2)){
+      if(!m.brTeamIds)m.brTeamIds=[];
+      if(!m.brTeamIds.includes(teamId))m.brTeamIds.push(teamId);
+    }
+    DB.requests.push({
+      id:'notif'+Date.now(),type:'match_result',
+      toUserId:cu.id,fromUserId:'admin1',
+      status:'unread',at:Date.now(),
+      title:'✅ Match Join Confirmed!',
+      body:`Payment verified! Team "${mt?.name||'Team'}" match ke liye confirm ho gayi. Tumhara Slot No. #${slotNo||'—'} hai. Room details milenge match se pehle.`
+    });
+    DB.save();closeMo();
+    showToast(`✅ PAYMENT DONE! SLOT #${slotNo||'—'} ASSIGNED!`,false,'ok');
+  } else {
+    DB.save();closeMo();
+    showToast('📩 JOIN REQUEST SENT! ADMIN APPROVE KAREGA',false,'ok');
+  }
+
+  pSchedule(g('mc'));
+  if(cu.role!=='admin') setTimeout(()=>{switchMatchTab('daily');},100);
 }
 
 // ── ADMIN: Match Details & Management ──
@@ -1554,7 +1958,7 @@ function openMatchDetails(matchId){
             <div>
               <div style="font-size:13px;font-weight:700">${team?.name||'Unknown'} <span style="font-size:9px;color:var(--purple)">${team?.tag||''}</span></div>
               <div style="font-family:var(--font-mono);font-size:9px;color:var(--muted);margin-top:2px">Cap: ${cap?.name||'—'} · 📱 ${cap?.phone||'—'}</div>
-              ${r.utr?`<div style="font-family:var(--font-mono);font-size:9px;color:var(--green);margin-top:2px">💰 UTR: ${r.utr}</div>`:`<div style="font-family:var(--font-mono);font-size:9px;color:var(--muted);margin-top:2px">No payment UTR</div>`}
+              ${r.paymentId&&r.paymentId!=='FREE'?`<div style="font-family:var(--font-mono);font-size:9px;color:var(--green);margin-top:2px">💳 Payment ID: ${r.paymentId}</div>`:r.utr?`<div style="font-family:var(--font-mono);font-size:9px;color:var(--green);margin-top:2px">💰 UTR: ${r.utr}</div>`:r.paymentId==='FREE'?`<div style="font-family:var(--font-mono);font-size:9px;color:var(--cyan);margin-top:2px">✓ Free Entry</div>`:`<div style="font-family:var(--font-mono);font-size:9px;color:var(--muted);margin-top:2px">No payment</div>`}
             </div>
             <div style="display:flex;flex-direction:column;align-items:flex-end;gap:5px">
               <span class="badge ${r.status==='approved'?'b-open':r.status==='rejected'?'b-closed':'b-ongoing'}">${r.status.toUpperCase()}</span>
@@ -1617,20 +2021,83 @@ function openMatchDetails(matchId){
     </div>`);
 }
 
+
+// ── Admin: View Slots Panel ──
+function openSlotsPanel(matchId){
+  const m=DB.matches.find(x=>x.id===matchId);
+  if(!m)return;
+  const slots=m.brSlots||{};
+  const max=m.maxTeams||12;
+  let rows='';
+  for(let i=1;i<=max;i++){
+    const teamId=slots[i];
+    if(!teamId){
+      rows+=`<div style="display:flex;align-items:center;gap:10px;padding:8px 12px;background:rgba(255,255,255,0.02);border:1px solid rgba(255,255,255,0.06);border-radius:6px;margin-bottom:6px">
+        <span style="font-family:var(--font-hd);font-size:16px;font-weight:900;color:var(--muted);min-width:36px">#${i}</span>
+        <span style="font-family:var(--font-mono);font-size:10px;color:var(--muted)">— EMPTY</span>
+      </div>`;
+      continue;
+    }
+    const team=DB.teams.find(t=>t.id===teamId);
+    if(!team) continue;
+    // Get all members
+    const members=[team.captainId,...(team.members||[])].filter((v,i,a)=>a.indexOf(v)===i);
+    const memberRows=members.map(uid=>{
+      const u=DB.users.find(x=>x.id===uid);
+      if(!u) return '';
+      const isCap=uid===team.captainId;
+      return `<div style="display:flex;align-items:center;gap:8px;padding:4px 0;border-bottom:1px solid rgba(255,255,255,0.04)">
+        <span style="font-family:var(--font-mono);font-size:9px;color:${isCap?'var(--gold)':'var(--muted)'};min-width:50px">${isCap?'👑 CAP':'MEMBER'}</span>
+        <span style="font-size:11px;font-weight:600;flex:1">${u.name||'—'}</span>
+        <span style="font-family:var(--font-mono);font-size:10px;color:var(--cyan)">${u.ign||'—'}</span>
+        <span style="font-family:var(--font-mono);font-size:9px;color:var(--muted)">${u.uid||'—'}</span>
+      </div>`;
+    }).join('');
+    rows+=`<div style="background:rgba(124,77,255,0.05);border:1px solid rgba(124,77,255,0.25);border-radius:8px;margin-bottom:8px;overflow:hidden">
+      <div style="display:flex;align-items:center;gap:10px;padding:8px 12px;background:rgba(124,77,255,0.08)">
+        <span style="font-family:var(--font-hd);font-size:18px;font-weight:900;color:var(--cyan);min-width:36px">#${i}</span>
+        <div>
+          <div style="font-weight:700;font-size:13px">${team.name} <span style="font-size:10px;color:var(--purple)">${team.tag}</span></div>
+          <div style="font-family:var(--font-mono);font-size:9px;color:var(--muted)">${members.length} players</div>
+        </div>
+      </div>
+      <div style="padding:6px 12px 8px">
+        <div style="display:flex;gap:6px;font-family:var(--font-mono);font-size:8px;color:var(--muted);padding:3px 0;border-bottom:1px solid rgba(255,255,255,0.05);margin-bottom:4px">
+          <span style="min-width:50px">ROLE</span><span style="flex:1">NAME</span><span>IGN</span><span style="min-width:60px;text-align:right">UID</span>
+        </div>
+        ${memberRows}
+      </div>
+    </div>`;
+  }
+  const filledCount=Object.keys(slots).length;
+  openMo(`<button class="mo-close" onclick="closeMo()">✕</button>
+    <div class="mo-title">📋 SLOT VERIFICATION</div>
+    <div style="font-family:var(--font-mono);font-size:10px;color:var(--muted);margin-bottom:12px;text-align:center">${m.label||m.date||'Match'} &nbsp;|&nbsp; ${filledCount}/${max} slots filled</div>
+    <div style="max-height:60vh;overflow-y:auto;padding-right:4px">${rows}</div>`);
+}
+
 function approveDailyJoin(reqId,matchId){
   const r=DB.requests.find(x=>x.id===reqId);
   if(!r)return;
   r.status='approved';
-  // Add team to match's teams array
+  // Add team to match's teams array + assign slot
   const m=DB.matches.find(x=>x.id===matchId);
-  if(m){if(!m.teams)m.teams=[];if(!m.teams.includes(r.teamId))m.teams.push(r.teamId);}
-  // Notify captain
+  if(m){
+    if(!m.teams)m.teams=[];
+    if(!m.teams.includes(r.teamId))m.teams.push(r.teamId);
+    // Add to brTeamIds if needed
+    if(!m.brTeamIds)m.brTeamIds=[];
+    if(!m.brTeamIds.includes(r.teamId))m.brTeamIds.push(r.teamId);
+    // Assign slot
+    r.slotNo=assignSlot(m,r.teamId);
+  }
+  // Notify captain with slot number
   const team=DB.teams.find(t=>t.id===r.teamId);
   DB.requests.push({id:'notif'+Date.now(),type:'match_result',toUserId:r.captainId,fromUserId:'admin1',status:'unread',at:Date.now(),
     title:'✅ Daily Match Join Approved!',
-    body:`Tumhara team "${team?.name||'Team'}" match ke liye approved ho gaya! Room details matches page par dekho.`
+    body:`Tumhara team "${team?.name||'Team'}" approved ho gaya! Tumhara Slot No. #${r.slotNo||'—'} hai. Room details milenge match se pehle.`
   });
-  DB.save();closeMo();showToast('✓ JOIN APPROVED',false,'ok');
+  DB.save();closeMo();showToast(`✓ JOIN APPROVED — SLOT #${r.slotNo||'—'}`,false,'ok');
 }
 
 function rejectDailyJoin(reqId){
@@ -1900,7 +2367,7 @@ function pNotifications(el){
             <div class="req-from">📅 ${m?.label||m?.date||'Match'}</div>
             <div class="req-meta">Team: ${team?.name||'—'} (${team?.tag||'—'})</div>
             <div class="req-meta">Captain: ${cap?.name||'—'} · 📱 ${cap?.phone||'—'}</div>
-            ${r.utr?`<div class="req-meta" style="color:var(--green)">💰 UTR: ${r.utr}</div>`:`<div class="req-meta">No payment UTR</div>`}
+            ${r.paymentId&&r.paymentId!=='FREE'?`<div class="req-meta" style="color:var(--green)">💳 Payment ID: ${r.paymentId}</div>`:r.utr?`<div class="req-meta" style="color:var(--green)">💰 UTR: ${r.utr}</div>`:r.paymentId==='FREE'?`<div class="req-meta" style="color:var(--cyan)">✓ Free Entry</div>`:`<div class="req-meta">No payment</div>`}
           </div>
           <div class="prow-acts">
             <button class="btn btn-green btn-xs" onclick="approveDailyJoin('${r.id}','${r.matchId}');pNotifications(g('mc'))">✓ APPROVE</button>
@@ -1911,18 +2378,20 @@ function pNotifications(el){
       html+=`</div>`;
     }
 
-    // Admin: see all registrations with UTR
-    const regsWithUTR=DB.registrations.filter(r=>r.utr);
-    if(regsWithUTR.length){
-      html+=`<div class="xcard"><div class="xcard-t">💰 Payment UTRs</div>`;
-      regsWithUTR.forEach(r=>{
+    // Admin: see all registrations with Payment ID
+    const regsWithPayment=DB.registrations.filter(r=>r.paymentId||r.utr);
+    if(regsWithPayment.length){
+      html+=`<div class="xcard"><div class="xcard-t">💳 Payment Records</div>`;
+      regsWithPayment.forEach(r=>{
         const t=DB.tournaments.find(x=>x.id===r.tournamentId);
         const team=DB.teams.find(x=>x.id===r.teamId);
+        const pid=r.paymentId||r.utr||'—';
+        const isFree=pid==='FREE';
         html+=`<div class="prow"><div class="prow-l"><div class="av av-g">₹</div><div>
           <div class="prow-name">${team?.name||'Unknown Team'}</div>
           <div class="prow-uid">Tournament: ${t?.name||'—'}</div>
-          <div class="prow-uid" style="color:var(--green)">UTR: ${r.utr}</div>
-        </div></div><span class="badge b-open">PAID</span></div>`;
+          <div class="prow-uid" style="color:${isFree?'var(--cyan)':'var(--green)'}">💳 ${isFree?'FREE ENTRY':'Payment ID: '+pid}</div>
+        </div></div><span class="badge b-open">${isFree?'FREE':'PAID'}</span></div>`;
       });
       html+=`</div>`;
     }
@@ -2088,6 +2557,7 @@ function pMyTeam(el){
   const memberIds=[mt.captainId,...mt.members];
   const members=memberIds.map(id=>DB.users.find(u=>u.id===id)).filter(Boolean);
   const pendingSentInvites=DB.requests.filter(r=>r.fromUserId===cu.id&&r.type==='captain_invite'&&r.status==='pending');
+  const _thbg=cardBgStyle('my_team_hero');
   el.innerHTML=`<div style="animation:pageIn .35s ease"><div class="sec-hd">
     <div class="sec-title"><div class="sec-bar"></div>${mt.name}</div>
     <div style="display:flex;gap:8px">
@@ -2096,7 +2566,7 @@ function pMyTeam(el){
       <button class="btn btn-purple btn-sm" onclick="openTeamChat()">💬 TEAM CHAT</button>
     </div>
   </div>
-  <div class="team-hero" style="margin-bottom:16px">
+  <div class="team-hero" style="margin-bottom:16px;${_thbg}">
     <div class="team-badge">${mt.name[0]}</div>
     <div><div class="team-name-big">${mt.name}</div><div class="team-tag-sm">${mt.tag}</div>
     <div style="font-family:var(--font-mono);font-size:11px;color:var(--gold);letter-spacing:2px;margin-top:5px">🔑 CODE: ${mt.code||'N/A'}</div></div>
@@ -2178,7 +2648,7 @@ function pProfile(el){
 
 // ── PLAYER / CAPTAIN: Daily Matches panel (no Info tab) ──
 function renderPlayerDailyPanel(myTeam, u){
-  const dailyMatches=DB.matches.filter(m=>m.matchType==='DAILY'||m.matchType==='daily');
+  const dailyMatches=DB.matches.filter(m=>m.matchType==='DAILY'||m.matchType==='daily'||m.matchType==='daily_match');
   const isCap=myTeam&&myTeam.captainId===u.id;
 
   // Split into: available (open, not joined) and registered (joined/approved)
@@ -2276,11 +2746,11 @@ function switchProfileTab(tab){
 
 // ── ADMIN: Daily Matches panel ──
 function renderAdminDailyPanel(){
-  const dailyMatches=DB.matches.filter(m=>m.matchType==='DAILY'||m.matchType==='daily');
+  const dailyMatches=DB.matches.filter(m=>m.matchType==='DAILY'||m.matchType==='daily'||m.matchType==='daily_match');
 
   let html=`<div style="margin-bottom:10px;display:flex;justify-content:space-between;align-items:center">
     <div style="font-family:var(--font-mono);font-size:10px;color:var(--cyan);letter-spacing:2px">📅 DAILY MATCHES (${dailyMatches.length})</div>
-    <button class="btn btn-green btn-xs" onclick="openCreateMatch();setTimeout(()=>pickMatchType('DAILY'),100)">+ NEW DAILY</button>
+    <button class="btn btn-green btn-xs" onclick="openAddDailyMatch()">+ NEW DAILY</button>
   </div>`;
 
   if(!dailyMatches.length){
@@ -2916,23 +3386,77 @@ function openAdminTeamChatSearch(teamId){
   closeMo();
   setTimeout(()=>openAdminTeamChat(teamId),150);
 }
-// ── FIND TEAM: Admin Edit Team ──
+// ── FIND TEAM: Admin Edit Team (Full Panel) ──
 function openEditTeamAdmin(teamId){
   const t=DB.teams.find(x=>x.id===teamId);if(!t)return;
   closeMo();
-  setTimeout(()=>{
-    openMo(`<button class="mo-close" onclick="closeMo()">✕</button>
-      <div class="mo-title">✏ EDIT TEAM</div>
-      <label class="fl">Team Name</label><input class="fi" id="eta-n" value="${t.name}"/>
-      <label class="fl">Team Tag</label><input class="fi" id="eta-t" value="${t.tag}" maxlength="5"/>
-      <button class="btn btn-cyan btn-full" onclick="saveTeamEditAdmin('${teamId}')">⚡ SAVE</button>`);
-  },150);
+  setTimeout(()=>_renderAdminTeamEdit(teamId),150);
+}
+function _renderAdminTeamEdit(teamId){
+  const t=DB.teams.find(x=>x.id===teamId);if(!t)return;
+  const memberIds=[t.captainId,...(t.members||[])].filter((v,i,a)=>a.indexOf(v)===i);
+  const members=memberIds.map(id=>DB.users.find(u=>u.id===id)).filter(Boolean);
+  const memberRows=members.map(m=>{
+    const isCap=m.id===t.captainId;
+    return `<div style="display:flex;align-items:center;gap:8px;padding:8px 0;border-bottom:1px solid rgba(255,255,255,0.05)">
+      <div style="width:28px;height:28px;border-radius:50%;background:${isCap?'linear-gradient(135deg,var(--gold),#ff9800)':'linear-gradient(135deg,var(--purple),var(--cyan))'};display:flex;align-items:center;justify-content:center;font-weight:800;font-size:11px;flex-shrink:0">${m.name[0]}</div>
+      <div style="flex:1;min-width:0">
+        <div style="font-weight:700;font-size:12px">${m.name} ${isCap?'<span style="font-family:var(--font-mono);font-size:8px;color:var(--gold)">👑 CAP</span>':''}</div>
+        <div style="font-family:var(--font-mono);font-size:9px;color:var(--muted)">IGN: ${m.ign||'—'} · UID: ${m.uid||'—'}</div>
+      </div>
+      <div style="display:flex;gap:4px;flex-shrink:0">
+        ${!isCap?`<button class="btn btn-gold btn-xs" onclick="adminMakeCaptain('${teamId}','${m.id}')">👑 CAP</button>`:''}
+        ${!isCap?`<button class="btn btn-red btn-xs" onclick="adminRemovePlayer('${teamId}','${m.id}')">✕ RM</button>`:'<span style="font-family:var(--font-mono);font-size:8px;color:var(--muted)">LEADER</span>'}
+      </div>
+    </div>`;
+  }).join('');
+  openMo(`<button class="mo-close" onclick="closeMo()">✕</button>
+    <div class="mo-title">✏ EDIT TEAM</div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:12px">
+      <div><label class="fl">Team Name</label><input class="fi" id="eta-n" value="${t.name}"/></div>
+      <div><label class="fl">Tag (max 5)</label><input class="fi" id="eta-t" value="${t.tag}" maxlength="5" style="text-transform:uppercase"/></div>
+    </div>
+    <button class="btn btn-cyan btn-full" onclick="saveTeamEditAdmin('${teamId}')" style="margin-bottom:16px">💾 SAVE NAME & TAG</button>
+    <div style="font-family:var(--font-mono);font-size:9px;color:var(--purple);letter-spacing:2px;margin-bottom:8px">👥 MEMBERS (${members.length})</div>
+    <div style="background:rgba(255,255,255,0.02);border:1px solid rgba(255,255,255,0.07);border-radius:8px;padding:4px 10px;margin-bottom:4px">
+      ${memberRows||'<div style="color:var(--muted);font-size:10px;padding:8px 0">No members</div>'}
+    </div>`);
 }
 function saveTeamEditAdmin(tid){
   const t=DB.teams.find(x=>x.id===tid);
   const n=(g('eta-n')?.value||'').trim(),tg=(g('eta-t')?.value||'').trim().toUpperCase();
   if(!n||!tg){showToast('⚠ NAME & TAG REQUIRED',true);return;}
-  t.name=n;t.tag=tg;DB.save();closeMo();showToast('✓ TEAM UPDATED',false,'ok');
+  t.name=n;t.tag=tg;DB.save();
+  showToast('✓ NAME & TAG UPDATED',false,'ok');
+  _renderAdminTeamEdit(tid);
+}
+function adminRemovePlayer(teamId,playerId){
+  const t=DB.teams.find(x=>x.id===teamId);
+  const p=DB.users.find(x=>x.id===playerId);
+  if(!t||!p)return;
+  if(playerId===t.captainId){showToast('⚠ CAPTAIN KO REMOVE NAHI KAR SAKTE — PEHLE CAPTAIN BADLO',true);return;}
+  t.members=t.members.filter(id=>id!==playerId);
+  p.teamId=null;
+  DB.save();
+  showToast(`✓ ${p.name} REMOVED`,false,'ok');
+  _renderAdminTeamEdit(teamId);
+}
+function adminMakeCaptain(teamId,newCapId){
+  const t=DB.teams.find(x=>x.id===teamId);
+  const oldCap=DB.users.find(u=>u.id===t.captainId);
+  const newCap=DB.users.find(u=>u.id===newCapId);
+  if(!t||!newCap)return;
+  // Demote old captain → player, keep in members
+  if(oldCap){oldCap.role='player';}
+  if(!t.members.includes(t.captainId)) t.members.push(t.captainId);
+  // Promote new captain
+  t.captainId=newCapId;
+  newCap.role='captain';
+  // Remove new captain from members list (captain is separate)
+  t.members=t.members.filter(id=>id!==newCapId);
+  DB.save();
+  showToast(`👑 ${newCap.name} AB CAPTAIN HAI`,false,'ok');
+  _renderAdminTeamEdit(teamId);
 }
 
 // ── TEAM CHAT ──
@@ -3007,7 +3531,31 @@ function doChangeAdminPw(){
 // MATCH MANAGER — BR + CS
 // ════════════════════════════════════════
 
-function pMatches(el){ pMatches_OLD(el); }
+function pMatches(el){
+  const isAdmin=cu.role==='admin';
+  const isDaily=m=>m.matchType==='daily'||m.matchType==='DAILY';
+  const myTeam=DB.teams.find(t=>t.captainId===cu.id||t.members.includes(cu.id));
+  let tourMs=(DB.matches||[]).filter(m=>!isDaily(m));
+  if(!isAdmin&&myTeam) tourMs=tourMs.filter(m=>(m.teams||[]).includes(myTeam.id)||(m.brTeamIds||[]).includes(myTeam.id)||m.team1Id===myTeam.id||m.team2Id===myTeam.id);
+  const sortedTour=[...tourMs].sort((a,b)=>(b.createdAt||0)-(a.createdAt||0));
+  const dailyMs=(DB.matches||[]).filter(isDaily).sort((a,b)=>(b.createdAt||0)-(a.createdAt||0));
+  el.innerHTML=`<div style="animation:pageIn .35s ease">
+    <div class="sec-hd">
+      <div class="sec-title"><div class="sec-bar"></div>MATCHES</div>
+      ${isAdmin?`<button class="btn btn-purple btn-sm" onclick="openAddMatchType()">+ NEW MATCH</button>`:''}
+    </div>
+    <div class="page-tabs" style="margin-bottom:18px">
+      <button class="page-tab active" id="mtab-tournament" onclick="switchMatchTab('tournament')">🏆 ${isAdmin?'TOURNAMENT MATCHES':'MY MATCHES'}</button>
+      <button class="page-tab" id="mtab-daily" onclick="switchMatchTab('daily')">📅 DAILY MATCHES</button>
+    </div>
+    <div id="match-panel-tournament">
+      ${sortedTour.length?sortedTour.map(m=>renderMatchCard(m)).join(''):`<div style="text-align:center;padding:40px;color:var(--muted);font-family:var(--font-mono);font-size:10px;letter-spacing:2px">// ${isAdmin?'NO TOURNAMENT MATCHES YET':'KOI MATCH ASSIGN NAHI HUA'}</div>`}
+    </div>
+    <div id="match-panel-daily" style="display:none">
+      ${isAdmin?(dailyMs.length?dailyMs.map(m=>renderMatchCard(m)).join(''):`<div style="text-align:center;padding:40px;color:var(--muted);font-family:var(--font-mono);font-size:10px;letter-spacing:2px">// NO DAILY MATCHES YET</div>`):renderDailyForPlayer(myTeam)}
+    </div>
+  </div>`;
+}
 
 function pMatches_OLD(el){
   // Get tournaments + seasons
@@ -3026,7 +3574,7 @@ function pMatches_OLD(el){
   let html=`<div style="animation:pageIn .35s ease">
     <div class="sec-hd">
       <div class="sec-title"><div class="sec-bar"></div>MATCH MANAGER</div>
-      ${cu.role==='admin'?`<button class="btn btn-cyan btn-sm" onclick="openCreateMatch()">+ NEW MATCH</button>`:''}
+      ${cu.role==='admin'?`<button class="btn btn-cyan btn-sm" onclick="openAddMatchType()">+ NEW MATCH</button>`:''}
     </div>`;
 
   if(!nonDailyMatches.length){
@@ -3095,6 +3643,7 @@ function pMatches_OLD(el){
 }
 
 function renderMatchBlock(m, role, myTeam){
+  const _mbg = cardBgStyle('match_card_default','match_'+m.id);
   const t1=DB.teams.find(x=>x.id===m.team1Id);
   const t2=DB.teams.find(x=>x.id===m.team2Id);
   const isBR = m.matchType==='BR';
@@ -3202,7 +3751,7 @@ function renderMatchBlock(m, role, myTeam){
         </div>
       </div>`;
 
-  return `<div class="match-block" style="${isMyMatch&&role!=='admin'?'border-color:rgba(0,245,255,0.25);':''}" >
+  return `<div class="match-block" style="${isMyMatch&&role!=='admin'?'border-color:rgba(0,245,255,0.25);':''}${_mbg}" >
     <div class="match-block-accent" style="background:${accentColor}"></div>
     <div class="match-top">
       <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
@@ -3489,11 +4038,9 @@ function pickMatchType(t){
   } else {
     if(tourFields) tourFields.style.display='block';
     if(dailyFields) dailyFields.style.display='none';
-    // Show BR checkboxes by default for tournament
-    const brWrap=g('br-extra-teams-wrap');
-    const t1=g('nm-t1'),t2=g('nm-t2'),l1=g('nm-t1-label'),l2=g('nm-t2-label');
-    if(brWrap) brWrap.style.display='block';
-    [t1,t2,l1,l2].forEach(el=>{if(el)el.style.display='none';});
+    // Trigger game mode layout based on current selection
+    const currentGm=g('nm-gamemode')?.value||'BR';
+    pickGameMode(currentGm);
   }
 }
 
@@ -3502,6 +4049,22 @@ function pickGameMode(gm){
   ['gm-br','gm-cs'].forEach(id=>{const el=g(id);if(el)el.className='role-opt';});
   const sel=gm==='BR'?'gm-br':'gm-cs';
   if(g(sel)) g(sel).className='role-opt sel-ply';
+
+  // Only change team layout if tournament is selected
+  if(_matchType==='DAILY') return;
+
+  const brWrap=g('br-extra-teams-wrap');
+  const t1=g('nm-t1'),t2=g('nm-t2'),l1=g('nm-t1-label'),l2=g('nm-t2-label');
+
+  if(gm==='BR'){
+    // BR: multi-team checkboxes, hide 1v1 dropdowns
+    if(brWrap) brWrap.style.display='block';
+    [t1,t2,l1,l2].forEach(el=>{if(el)el.style.display='none';});
+  } else {
+    // CS: 1v1 dropdowns, hide checkboxes
+    if(brWrap) brWrap.style.display='none';
+    [t1,t2,l1,l2].forEach(el=>{if(el)el.style.display='block';});
+  }
 }
 
 function pickMatchFormat(f){
@@ -3549,7 +4112,7 @@ function saveNewMatch(){
 
   const match={
     id:'m2_'+Date.now(),
-    matchType:isDaily?'DAILY':'TOUR',
+    matchType:isDaily?'daily':'tournament',
     gameMode,
     matchFormat:_matchFormat,
     maxTeams,
@@ -3694,7 +4257,7 @@ function saveBRResult(matchId){
   m.result=scores[0]?.teamName||'TBD';
   // Notify teams
   notifyMatchResult(m);
-  DB.save();closeMo();showToast('✓ BR SCORES SAVED',false,'ok');pMatches(g('mc'));
+  var _isD=(m.matchType==='daily'||m.matchType==='DAILY');DB.save();closeMo();showToast('✓ BR SCORES SAVED',false,'ok');pSchedule(g('mc'));if(!_isD&&cu.role!=='admin')setTimeout(function(){switchMatchTab('tournament');},50);
 }
 
 function saveCSResult(matchId){
@@ -3702,7 +4265,7 @@ function saveCSResult(matchId){
   const winner=v('cs-win-val');if(!winner){showToast('⚠ SELECT OR TYPE WINNER',true);return;}
   m.result=winner.toUpperCase();
   notifyMatchResult(m);
-  DB.save();closeMo();showToast('✓ RESULT SAVED',false,'ok');pMatches(g('mc'));
+  var _isD2=(m.matchType==='daily'||m.matchType==='DAILY');DB.save();closeMo();showToast('✓ RESULT SAVED',false,'ok');pSchedule(g('mc'));if(!_isD2&&cu.role!=='admin')setTimeout(function(){switchMatchTab('tournament');},50);
 }
 
 function notifyMatchResult(m){
@@ -3965,6 +4528,279 @@ function doResetPassword(userId){
   DB.save();
   closeMo();
   showToast('✓ PASSWORD RESET FOR '+u.name,false,'ok');
+}
+
+// ══ RAZORPAY CONFIG ══
+const RZP_KEY = ZONEX_CONFIG.RAZORPAY_KEY;
+
+function parseAmount(entryStr){
+  // Extract numeric amount from strings like "₹50", "Rs 100", "50", "₹10 per squad"
+  if(!entryStr) return 0;
+  const match = entryStr.replace(/,/g,'').match(/\d+(\.\d+)?/);
+  return match ? Math.round(parseFloat(match[0])) : 0;
+}
+
+function openRazorpay(options){
+  return new Promise((resolve, reject) => {
+    if(typeof Razorpay === 'undefined'){
+      showToast('⚠ PAYMENT LOAD NAHI HUA, RETRY KARO',true);
+      reject('Razorpay not loaded');
+      return;
+    }
+    const rzp = new Razorpay({
+      key: RZP_KEY,
+      currency: ZONEX_CONFIG.CURRENCY,
+      name: ZONEX_CONFIG.SITE_NAME,
+      description: options.description || 'Entry Fee',
+      image: '',
+      amount: options.amount * 100, // paise
+      prefill: {
+        name: cu?.name || '',
+        contact: cu?.phone || ''
+      },
+      theme: { color: '#00b4ff' },
+      handler: function(response){
+        resolve(response.razorpay_payment_id);
+      },
+      modal: {
+        ondismiss: function(){ reject('dismissed'); }
+      }
+    });
+    rzp.open();
+  });
+}
+
+
+// ════════════════════════════════════════
+// IMAGE MANAGER
+// ════════════════════════════════════════
+
+// Image slots definition
+const IMG_SLOTS = [
+  // Dashboard stat cards
+  {id:'stat_tournaments', label:'Stat Card — Tournaments', section:'Dashboard'},
+  {id:'stat_open',        label:'Stat Card — Open Now',    section:'Dashboard'},
+  {id:'stat_seasons',     label:'Stat Card — Seasons',     section:'Dashboard'},
+  {id:'team_card',        label:'Team Card',               section:'Dashboard'},
+  // Tournament cards
+  {id:'tournament_card',  label:'Tournament Card (default)',section:'Tournaments'},
+  // Match cards
+  {id:'match_card_default',label:'Match Card (default)',   section:'Matches'},
+  // My team
+  {id:'my_team_hero',     label:'My Team Hero Card',       section:'My Team'},
+  // Notification
+  {id:'notif_match',      label:'Notification — Match Alert',section:'Notifications'},
+  // Daily match
+  {id:'daily_match_default',label:'Daily Match Card (default)',section:'Daily Match'},
+];
+
+function getImg(slotId, fallback=''){
+  if(!DB._d.images) return fallback;
+  return DB._d.images[slotId] || fallback;
+}
+
+function pImageManager(el){
+  if(!DB._d.images) DB._d.images={};
+  if(!DB._d.customImages) DB._d.customImages={}; // per-item images
+
+  // Group slots by section
+  const sections={};
+  IMG_SLOTS.forEach(s=>{
+    if(!sections[s.section]) sections[s.section]=[];
+    sections[s.section].push(s);
+  });
+
+  // Also get per-item images (per tournament, per match, per daily match)
+  const tournaments = DB.tournaments||[];
+  const matches = DB.matches||[];
+  const dailyMatches = DB._d.dailyMatches||[];
+
+  el.innerHTML=`<div style="animation:pageIn .35s ease">
+    <div class="sec-hd">
+      <div class="sec-title"><div class="sec-bar"></div>IMAGE MANAGER</div>
+      <button class="btn btn-red btn-sm" onclick="clearAllImages()">🗑 CLEAR ALL</button>
+    </div>
+    <div style="background:rgba(26,111,255,0.06);border:1px solid rgba(26,111,255,0.2);padding:12px 14px;border-radius:6px;margin-bottom:20px;font-size:13px;color:#aaa;line-height:1.7">
+      📌 Images are stored in browser. After setting images, they apply automatically to all cards.<br>
+      <span style="color:#ffc107">⚠ Images save locally — after Firebase sync they will persist across devices.</span>
+    </div>
+
+    <!-- Section: Global Slot Images -->
+    ${Object.entries(sections).map(([sec, slots])=>`
+      <div class="xcard" style="margin-bottom:18px">
+        <div class="xcard-t">${sec}</div>
+        <div class="img-grid">
+          ${slots.map(slot=>{
+            const img=getImg(slot.id);
+            return`<div class="img-card">
+              ${img
+                ?`<img src="${img}" class="img-preview" onclick="openImgSlot('${slot.id}','${slot.label.replace(/'/g,'&apos;')}')" title="Click to change"/>`
+                :`<div class="img-placeholder" onclick="openImgSlot('${slot.id}','${slot.label.replace(/'/g,'&apos;')}')">
+                  <span style="font-size:28px">🖼</span>
+                  <span style="font-family:'Roboto Mono',monospace;font-size:9px;color:#607d8b;letter-spacing:1px">CLICK TO ADD</span>
+                </div>`}
+              <div class="img-label">${slot.label}</div>
+              <div class="img-actions">
+                <button class="btn btn-cyan btn-xs" onclick="openImgSlot('${slot.id}','${slot.label.replace(/'/g,'&apos;')}')">📁 SET</button>
+                ${img?`<button class="btn btn-red btn-xs" onclick="removeImg('${slot.id}')">✕</button>`:''}
+              </div>
+            </div>`;
+          }).join('')}
+        </div>
+      </div>`).join('')}
+
+    <!-- Per-Tournament Images -->
+    ${tournaments.length?`<div class="xcard" style="margin-bottom:18px">
+      <div class="xcard-t">🏆 Per-Tournament Images</div>
+      <div class="img-grid">
+        ${tournaments.map(t=>{
+          const img=DB._d.customImages['tour_'+t.id]||'';
+          return`<div class="img-card">
+            ${img?`<img src="${img}" class="img-preview" onclick="openCustomImg('tour_${t.id}','${t.name.replace(/'/g,'&apos;')}')" title="Click to change"/>`
+            :`<div class="img-placeholder" onclick="openCustomImg('tour_${t.id}','${t.name.replace(/'/g,'&apos;')}')">
+              <span style="font-size:28px">🖼</span>
+              <span style="font-family:'Roboto Mono',monospace;font-size:9px;color:#607d8b;letter-spacing:1px">CLICK TO ADD</span>
+            </div>`}
+            <div class="img-label">${t.name}</div>
+            <div class="img-actions">
+              <button class="btn btn-cyan btn-xs" onclick="openCustomImg('tour_${t.id}','${t.name.replace(/'/g,'&apos;')}')">📁 SET</button>
+              ${img?`<button class="btn btn-red btn-xs" onclick="removeCustomImg('tour_${t.id}')">✕</button>`:''}
+            </div>
+          </div>`;
+        }).join('')}
+      </div>
+    </div>`:''}
+
+    <!-- Per-Match Images -->
+    ${matches.length?`<div class="xcard" style="margin-bottom:18px">
+      <div class="xcard-t">⚔️ Per-Match Images</div>
+      <div class="img-grid">
+        ${matches.map(m=>{
+          const img=DB._d.customImages['match_'+m.id]||'';
+          const name=(m.team1||'Team1')+' vs '+(m.team2||'Team2');
+          return`<div class="img-card">
+            ${img?`<img src="${img}" class="img-preview" onclick="openCustomImg('match_${m.id}','${name.replace(/'/g,'&apos;')}')" title="Click to change"/>`
+            :`<div class="img-placeholder" onclick="openCustomImg('match_${m.id}','${name.replace(/'/g,'&apos;')}')">
+              <span style="font-size:28px">🖼</span>
+              <span style="font-family:'Roboto Mono',monospace;font-size:9px;color:#607d8b;letter-spacing:1px">CLICK TO ADD</span>
+            </div>`}
+            <div class="img-label">${name}</div>
+            <div class="img-actions">
+              <button class="btn btn-cyan btn-xs" onclick="openCustomImg('match_${m.id}','${name.replace(/'/g,'&apos;')}')">📁 SET</button>
+              ${img?`<button class="btn btn-red btn-xs" onclick="removeCustomImg('match_${m.id}')">✕</button>`:''}
+            </div>
+          </div>`;
+        }).join('')}
+      </div>
+    </div>`:''}
+
+    <!-- Per-Daily Match Images -->
+    ${dailyMatches.length?`<div class="xcard" style="margin-bottom:18px">
+      <div class="xcard-t">⚡ Per-Daily Match Images</div>
+      <div class="img-grid">
+        ${dailyMatches.map(dm=>{
+          const img=DB._d.customImages['dm_'+dm.id]||'';
+          return`<div class="img-card">
+            ${img?`<img src="${img}" class="img-preview" onclick="openCustomImg('dm_${dm.id}','${dm.title.replace(/'/g,'&apos;')}')" title="Click to change"/>`
+            :`<div class="img-placeholder" onclick="openCustomImg('dm_${dm.id}','${dm.title.replace(/'/g,'&apos;')}')">
+              <span style="font-size:28px">🖼</span>
+              <span style="font-family:'Roboto Mono',monospace;font-size:9px;color:#607d8b;letter-spacing:1px">CLICK TO ADD</span>
+            </div>`}
+            <div class="img-label">${dm.title}</div>
+            <div class="img-actions">
+              <button class="btn btn-cyan btn-xs" onclick="openCustomImg('dm_${dm.id}','${dm.title.replace(/'/g,'&apos;')}')">📁 SET</button>
+              ${img?`<button class="btn btn-red btn-xs" onclick="removeCustomImg('dm_${dm.id}')">✕</button>`:''}
+            </div>
+          </div>`;
+        }).join('')}
+      </div>
+    </div>`:''}
+
+  </div>`;
+}
+
+// Open image upload for global slot
+function openImgSlot(slotId, label){
+  const inp = document.createElement('input');
+  inp.type='file'; inp.accept='image/*';
+  inp.onchange = function(e){
+    const file = e.target.files[0]; if(!file) return;
+    // Resize image before saving to reduce storage size
+    const reader = new FileReader();
+    reader.onload = function(ev){
+      resizeImg(ev.target.result, 800, 400, function(resized){
+        if(!DB._d.images) DB._d.images={};
+        DB._d.images[slotId] = resized;
+        DB.save();
+        showToast('✓ IMAGE SAVED — '+label,false,'ok');
+        pImageManager(g('mc'));
+      });
+    };
+    reader.readAsDataURL(file);
+  };
+  inp.click();
+}
+
+// Open image upload for custom per-item slot
+function openCustomImg(key, label){
+  const inp = document.createElement('input');
+  inp.type='file'; inp.accept='image/*';
+  inp.onchange = function(e){
+    const file = e.target.files[0]; if(!file) return;
+    const reader = new FileReader();
+    reader.onload = function(ev){
+      resizeImg(ev.target.result, 800, 400, function(resized){
+        if(!DB._d.customImages) DB._d.customImages={};
+        DB._d.customImages[key] = resized;
+        DB.save();
+        showToast('✓ IMAGE SET — '+label,false,'ok');
+        pImageManager(g('mc'));
+      });
+    };
+    reader.readAsDataURL(file);
+  };
+  inp.click();
+}
+
+function removeImg(slotId){
+  if(!DB._d.images) return;
+  delete DB._d.images[slotId];
+  DB.save(); showToast('IMAGE REMOVED'); pImageManager(g('mc'));
+}
+
+function removeCustomImg(key){
+  if(!DB._d.customImages) return;
+  delete DB._d.customImages[key];
+  DB.save(); showToast('IMAGE REMOVED'); pImageManager(g('mc'));
+}
+
+function clearAllImages(){
+  if(!confirm('Clear ALL images?')) return;
+  DB._d.images={}; DB._d.customImages={};
+  DB.save(); showToast('ALL IMAGES CLEARED'); pImageManager(g('mc'));
+}
+
+// Resize image helper - reduces file size
+function resizeImg(src, maxW, maxH, cb){
+  const img = new Image();
+  img.onload = function(){
+    const canvas = document.createElement('canvas');
+    let w=img.width, h=img.height;
+    if(w>maxW){h=Math.round(h*maxW/w);w=maxW;}
+    if(h>maxH){w=Math.round(w*maxH/h);h=maxH;}
+    canvas.width=w; canvas.height=h;
+    canvas.getContext('2d').drawImage(img,0,0,w,h);
+    cb(canvas.toDataURL('image/jpeg',0.75));
+  };
+  img.src=src;
+}
+
+// ── Apply images to cards in render functions ──
+// Helper: get background style for a card
+function cardBgStyle(slotId, customKey){
+  const img = (customKey && DB._d.customImages && DB._d.customImages[customKey])
+    || (DB._d.images && DB._d.images[slotId]) || '';
+  return img ? `background-image:url('${img}');background-size:cover;background-position:center;` : '';
 }
 
 // ══ MODAL ══
