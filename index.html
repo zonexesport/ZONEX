@@ -1003,9 +1003,9 @@ function pDash(el){
     <div class="sec-hd"><div class="sec-title"><div class="sec-bar"></div>DASHBOARD</div>
       ${cu.role==='admin'?`<div style="display:flex;gap:8px"><button class="btn btn-gold btn-sm" onclick="openTeamSearch()">🔍 FIND TEAM</button><button class="btn btn-red btn-sm" onclick="openAdminChangePw()">🔐 CHANGE PW</button></div>`:''}</div>
     <div class="stats-grid">
-      <div class="sc" style="--sc-grad:linear-gradient(90deg,var(--cyan),var(--cyan2));"+cardBgStyle('stat_tournaments')><div class="sc-icon">🏆</div><div class="sc-val">${tc}</div><div class="sc-lbl">Tournaments</div></div>
-      <div class="sc" style="--sc-grad:linear-gradient(90deg,var(--green),#00c97d)"><div class="sc-icon">🟢</div><div class="sc-val">${oc}</div><div class="sc-lbl">Open Now</div></div>
-      <div class="sc" style="--sc-grad:linear-gradient(90deg,var(--purple),var(--purple2))"><div class="sc-icon">⭐</div><div class="sc-val">${sc}</div><div class="sc-lbl">Seasons</div></div>
+      <div class="sc ${cardBgStyle('stat_tournaments')?'sc-img':''}" style="--sc-grad:linear-gradient(90deg,var(--cyan),var(--cyan2));${cardBgStyle('stat_tournaments')}"><div class="sc-icon">🏆</div><div class="sc-val">${tc}</div><div class="sc-lbl">Tournaments</div></div>
+      <div class="sc ${cardBgStyle('stat_open')?'sc-img':''}" style="--sc-grad:linear-gradient(90deg,var(--green),#00c97d);${cardBgStyle('stat_open')}"><div class="sc-icon">🟢</div><div class="sc-val">${oc}</div><div class="sc-lbl">Open Now</div></div>
+      <div class="sc ${cardBgStyle('stat_seasons')?'sc-img':''}" style="--sc-grad:linear-gradient(90deg,var(--purple),var(--purple2));${cardBgStyle('stat_seasons')}"><div class="sc-icon">⭐</div><div class="sc-val">${sc}</div><div class="sc-lbl">Seasons</div></div>
     </div>
     ${widget}
     <div class="xcard"><div class="xcard-t">Latest Tournaments</div>
@@ -4572,235 +4572,127 @@ function openRazorpay(options){
 
 
 // ════════════════════════════════════════
-// IMAGE MANAGER
+// IMAGE MANAGER — URL BASED (fast, no file bloat)
 // ════════════════════════════════════════
 
-// Image slots definition
 const IMG_SLOTS = [
-  // Dashboard stat cards
-  {id:'stat_tournaments', label:'Stat Card — Tournaments', section:'Dashboard'},
-  {id:'stat_open',        label:'Stat Card — Open Now',    section:'Dashboard'},
-  {id:'stat_seasons',     label:'Stat Card — Seasons',     section:'Dashboard'},
-  {id:'team_card',        label:'Team Card',               section:'Dashboard'},
-  // Tournament cards
-  {id:'tournament_card',  label:'Tournament Card (default)',section:'Tournaments'},
-  // Match cards
-  {id:'match_card_default',label:'Match Card (default)',   section:'Matches'},
-  // My team
-  {id:'my_team_hero',     label:'My Team Hero Card',       section:'My Team'},
-  // Notification
-  {id:'notif_match',      label:'Notification — Match Alert',section:'Notifications'},
-  // Daily match
-  {id:'daily_match_default',label:'Daily Match Card (default)',section:'Daily Match'},
+  {id:'stat_tournaments',  label:'Stat — Tournaments',        section:'Dashboard'},
+  {id:'stat_open',         label:'Stat — Open Now',           section:'Dashboard'},
+  {id:'stat_seasons',      label:'Stat — Seasons',            section:'Dashboard'},
+  {id:'team_card',         label:'Team Card',                 section:'Dashboard'},
+  {id:'tournament_card',   label:'Tournament Card (default)', section:'Tournaments'},
+  {id:'match_card_default',label:'Match Card (default)',      section:'Matches'},
+  {id:'my_team_hero',      label:'My Team Hero',              section:'My Team'},
+  {id:'daily_match_default',label:'Daily Match (default)',    section:'Daily Match'},
 ];
 
-function getImg(slotId, fallback=''){
-  if(!DB._d.images) return fallback;
-  return DB._d.images[slotId] || fallback;
+function getImg(slotId){
+  return (DB._d.images && DB._d.images[slotId]) || '';
+}
+
+function cardBgStyle(slotId, customKey){
+  const img = (customKey && DB._d.customImages && DB._d.customImages[customKey])
+    || (DB._d.images && DB._d.images[slotId]) || '';
+  if(!img) return '';
+  return `background-image:url('${img}');background-size:cover;background-position:center;background-repeat:no-repeat;`;
 }
 
 function pImageManager(el){
   if(!DB._d.images) DB._d.images={};
-  if(!DB._d.customImages) DB._d.customImages={}; // per-item images
+  if(!DB._d.customImages) DB._d.customImages={};
 
-  // Group slots by section
   const sections={};
   IMG_SLOTS.forEach(s=>{
     if(!sections[s.section]) sections[s.section]=[];
     sections[s.section].push(s);
   });
 
-  // Also get per-item images (per tournament, per match, per daily match)
-  const tournaments = DB.tournaments||[];
-  const matches = DB.matches||[];
-  const dailyMatches = DB._d.dailyMatches||[];
+  const tournaments=DB.tournaments||[];
+  const matches=DB.matches||[];
+  const dailyMatches=DB._d.dailyMatches||[];
+
+  const renderSlotRow = (slotId, label, key) => {
+    const img = key ? (DB._d.customImages[key]||'') : getImg(slotId);
+    return `<div style="background:#111;border:1px solid rgba(26,111,255,0.15);border-radius:6px;padding:12px 14px;margin-bottom:8px;display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+      ${img
+        ? `<img src="${img}" style="width:64px;height:40px;object-fit:cover;border-radius:4px;border:1px solid rgba(26,111,255,0.3);flex-shrink:0" onerror="this.style.display='none'"/>`
+        : `<div style="width:64px;height:40px;background:#0a0a0a;border:1px solid rgba(26,111,255,0.2);border-radius:4px;display:flex;align-items:center;justify-content:center;font-size:18px;flex-shrink:0">🖼</div>`}
+      <div style="flex:1;min-width:0">
+        <div style="font-size:13px;font-weight:600;color:#fff;margin-bottom:4px">${label}</div>
+        <input class="fi" style="margin-bottom:0;padding:7px 10px;font-size:12px;width:100%"
+          id="img-url-${slotId||key}"
+          placeholder="Paste image URL (ImgBB, Imgur, Google Drive...)"
+          value="${img}"/>
+      </div>
+      <div style="display:flex;gap:6px;flex-shrink:0">
+        <button class="btn btn-cyan btn-xs" onclick="saveImgUrl('${slotId||''}','${key||''}')">✓ SAVE</button>
+        ${img?`<button class="btn btn-red btn-xs" onclick="removeImgUrl('${slotId||''}','${key||''}')">✕</button>`:''}
+      </div>
+    </div>`;
+  };
 
   el.innerHTML=`<div style="animation:pageIn .35s ease">
     <div class="sec-hd">
       <div class="sec-title"><div class="sec-bar"></div>IMAGE MANAGER</div>
       <button class="btn btn-red btn-sm" onclick="clearAllImages()">🗑 CLEAR ALL</button>
     </div>
-    <div style="background:rgba(26,111,255,0.06);border:1px solid rgba(26,111,255,0.2);padding:12px 14px;border-radius:6px;margin-bottom:20px;font-size:13px;color:#aaa;line-height:1.7">
-      📌 Images are stored in browser. After setting images, they apply automatically to all cards.<br>
-      <span style="color:#ffc107">⚠ Images save locally — after Firebase sync they will persist across devices.</span>
+
+    <div style="background:rgba(26,111,255,0.06);border:1px solid rgba(26,111,255,0.2);padding:12px 16px;border-radius:6px;margin-bottom:18px;font-size:13px;color:#aaa;line-height:1.8">
+      📌 <strong style="color:#fff">Free image hosting:</strong> Upload to
+      <a href="https://imgbb.com" target="_blank" style="color:#2979ff">ImgBB.com</a> or
+      <a href="https://imgur.com" target="_blank" style="color:#2979ff">Imgur.com</a>
+      → Copy <strong style="color:#ffc107">Direct Link</strong> → Paste here → Save ✅
     </div>
 
-    <!-- Section: Global Slot Images -->
     ${Object.entries(sections).map(([sec, slots])=>`
-      <div class="xcard" style="margin-bottom:18px">
+      <div class="xcard" style="margin-bottom:16px">
         <div class="xcard-t">${sec}</div>
-        <div class="img-grid">
-          ${slots.map(slot=>{
-            const img=getImg(slot.id);
-            return`<div class="img-card">
-              ${img
-                ?`<img src="${img}" class="img-preview" onclick="openImgSlot('${slot.id}','${slot.label.replace(/'/g,'&apos;')}')" title="Click to change"/>`
-                :`<div class="img-placeholder" onclick="openImgSlot('${slot.id}','${slot.label.replace(/'/g,'&apos;')}')">
-                  <span style="font-size:28px">🖼</span>
-                  <span style="font-family:'Roboto Mono',monospace;font-size:9px;color:#607d8b;letter-spacing:1px">CLICK TO ADD</span>
-                </div>`}
-              <div class="img-label">${slot.label}</div>
-              <div class="img-actions">
-                <button class="btn btn-cyan btn-xs" onclick="openImgSlot('${slot.id}','${slot.label.replace(/'/g,'&apos;')}')">📁 SET</button>
-                ${img?`<button class="btn btn-red btn-xs" onclick="removeImg('${slot.id}')">✕</button>`:''}
-              </div>
-            </div>`;
-          }).join('')}
-        </div>
+        ${slots.map(s=>renderSlotRow(s.id, s.label, null)).join('')}
       </div>`).join('')}
 
-    <!-- Per-Tournament Images -->
-    ${tournaments.length?`<div class="xcard" style="margin-bottom:18px">
+    ${tournaments.length?`<div class="xcard" style="margin-bottom:16px">
       <div class="xcard-t">🏆 Per-Tournament Images</div>
-      <div class="img-grid">
-        ${tournaments.map(t=>{
-          const img=DB._d.customImages['tour_'+t.id]||'';
-          return`<div class="img-card">
-            ${img?`<img src="${img}" class="img-preview" onclick="openCustomImg('tour_${t.id}','${t.name.replace(/'/g,'&apos;')}')" title="Click to change"/>`
-            :`<div class="img-placeholder" onclick="openCustomImg('tour_${t.id}','${t.name.replace(/'/g,'&apos;')}')">
-              <span style="font-size:28px">🖼</span>
-              <span style="font-family:'Roboto Mono',monospace;font-size:9px;color:#607d8b;letter-spacing:1px">CLICK TO ADD</span>
-            </div>`}
-            <div class="img-label">${t.name}</div>
-            <div class="img-actions">
-              <button class="btn btn-cyan btn-xs" onclick="openCustomImg('tour_${t.id}','${t.name.replace(/'/g,'&apos;')}')">📁 SET</button>
-              ${img?`<button class="btn btn-red btn-xs" onclick="removeCustomImg('tour_${t.id}')">✕</button>`:''}
-            </div>
-          </div>`;
-        }).join('')}
-      </div>
+      ${tournaments.map(t=>renderSlotRow(null, t.name, 'tour_'+t.id)).join('')}
     </div>`:''}
 
-    <!-- Per-Match Images -->
-    ${matches.length?`<div class="xcard" style="margin-bottom:18px">
+    ${matches.length?`<div class="xcard" style="margin-bottom:16px">
       <div class="xcard-t">⚔️ Per-Match Images</div>
-      <div class="img-grid">
-        ${matches.map(m=>{
-          const img=DB._d.customImages['match_'+m.id]||'';
-          const name=(m.team1||'Team1')+' vs '+(m.team2||'Team2');
-          return`<div class="img-card">
-            ${img?`<img src="${img}" class="img-preview" onclick="openCustomImg('match_${m.id}','${name.replace(/'/g,'&apos;')}')" title="Click to change"/>`
-            :`<div class="img-placeholder" onclick="openCustomImg('match_${m.id}','${name.replace(/'/g,'&apos;')}')">
-              <span style="font-size:28px">🖼</span>
-              <span style="font-family:'Roboto Mono',monospace;font-size:9px;color:#607d8b;letter-spacing:1px">CLICK TO ADD</span>
-            </div>`}
-            <div class="img-label">${name}</div>
-            <div class="img-actions">
-              <button class="btn btn-cyan btn-xs" onclick="openCustomImg('match_${m.id}','${name.replace(/'/g,'&apos;')}')">📁 SET</button>
-              ${img?`<button class="btn btn-red btn-xs" onclick="removeCustomImg('match_${m.id}')">✕</button>`:''}
-            </div>
-          </div>`;
-        }).join('')}
-      </div>
+      ${matches.map(m=>renderSlotRow(null,(m.team1||'Team1')+' vs '+(m.team2||'Team2'),'match_'+m.id)).join('')}
     </div>`:''}
 
-    <!-- Per-Daily Match Images -->
-    ${dailyMatches.length?`<div class="xcard" style="margin-bottom:18px">
+    ${dailyMatches.length?`<div class="xcard" style="margin-bottom:16px">
       <div class="xcard-t">⚡ Per-Daily Match Images</div>
-      <div class="img-grid">
-        ${dailyMatches.map(dm=>{
-          const img=DB._d.customImages['dm_'+dm.id]||'';
-          return`<div class="img-card">
-            ${img?`<img src="${img}" class="img-preview" onclick="openCustomImg('dm_${dm.id}','${dm.title.replace(/'/g,'&apos;')}')" title="Click to change"/>`
-            :`<div class="img-placeholder" onclick="openCustomImg('dm_${dm.id}','${dm.title.replace(/'/g,'&apos;')}')">
-              <span style="font-size:28px">🖼</span>
-              <span style="font-family:'Roboto Mono',monospace;font-size:9px;color:#607d8b;letter-spacing:1px">CLICK TO ADD</span>
-            </div>`}
-            <div class="img-label">${dm.title}</div>
-            <div class="img-actions">
-              <button class="btn btn-cyan btn-xs" onclick="openCustomImg('dm_${dm.id}','${dm.title.replace(/'/g,'&apos;')}')">📁 SET</button>
-              ${img?`<button class="btn btn-red btn-xs" onclick="removeCustomImg('dm_${dm.id}')">✕</button>`:''}
-            </div>
-          </div>`;
-        }).join('')}
-      </div>
+      ${dailyMatches.map(dm=>renderSlotRow(null,dm.title||'Daily Match','dm_'+dm.id)).join('')}
     </div>`:''}
 
   </div>`;
 }
 
-// Open image upload for global slot
-function openImgSlot(slotId, label){
-  const inp = document.createElement('input');
-  inp.type='file'; inp.accept='image/*';
-  inp.onchange = function(e){
-    const file = e.target.files[0]; if(!file) return;
-    // Resize image before saving to reduce storage size
-    const reader = new FileReader();
-    reader.onload = function(ev){
-      resizeImg(ev.target.result, 800, 400, function(resized){
-        if(!DB._d.images) DB._d.images={};
-        DB._d.images[slotId] = resized;
-        DB.save();
-        showToast('✓ IMAGE SAVED — '+label,false,'ok');
-        pImageManager(g('mc'));
-      });
-    };
-    reader.readAsDataURL(file);
-  };
-  inp.click();
+function saveImgUrl(slotId, key){
+  const inputId = 'img-url-'+(slotId||key);
+  const url = (document.getElementById(inputId)?.value||'').trim();
+  if(!url){showToast('⚠ PASTE AN IMAGE URL FIRST',true);return;}
+  if(!DB._d.images) DB._d.images={};
+  if(!DB._d.customImages) DB._d.customImages={};
+  if(slotId) DB._d.images[slotId]=url;
+  else if(key) DB._d.customImages[key]=url;
+  DB.save();
+  showToast('✓ IMAGE SAVED',false,'ok');
+  pImageManager(g('mc'));
 }
 
-// Open image upload for custom per-item slot
-function openCustomImg(key, label){
-  const inp = document.createElement('input');
-  inp.type='file'; inp.accept='image/*';
-  inp.onchange = function(e){
-    const file = e.target.files[0]; if(!file) return;
-    const reader = new FileReader();
-    reader.onload = function(ev){
-      resizeImg(ev.target.result, 800, 400, function(resized){
-        if(!DB._d.customImages) DB._d.customImages={};
-        DB._d.customImages[key] = resized;
-        DB.save();
-        showToast('✓ IMAGE SET — '+label,false,'ok');
-        pImageManager(g('mc'));
-      });
-    };
-    reader.readAsDataURL(file);
-  };
-  inp.click();
-}
-
-function removeImg(slotId){
-  if(!DB._d.images) return;
-  delete DB._d.images[slotId];
-  DB.save(); showToast('IMAGE REMOVED'); pImageManager(g('mc'));
-}
-
-function removeCustomImg(key){
-  if(!DB._d.customImages) return;
-  delete DB._d.customImages[key];
-  DB.save(); showToast('IMAGE REMOVED'); pImageManager(g('mc'));
+function removeImgUrl(slotId, key){
+  if(slotId && DB._d.images) delete DB._d.images[slotId];
+  if(key && DB._d.customImages) delete DB._d.customImages[key];
+  DB.save();
+  showToast('IMAGE REMOVED');
+  pImageManager(g('mc'));
 }
 
 function clearAllImages(){
-  if(!confirm('Clear ALL images?')) return;
-  DB._d.images={}; DB._d.customImages={};
-  DB.save(); showToast('ALL IMAGES CLEARED'); pImageManager(g('mc'));
-}
-
-// Resize image helper - reduces file size
-function resizeImg(src, maxW, maxH, cb){
-  const img = new Image();
-  img.onload = function(){
-    const canvas = document.createElement('canvas');
-    let w=img.width, h=img.height;
-    if(w>maxW){h=Math.round(h*maxW/w);w=maxW;}
-    if(h>maxH){w=Math.round(w*maxH/h);h=maxH;}
-    canvas.width=w; canvas.height=h;
-    canvas.getContext('2d').drawImage(img,0,0,w,h);
-    cb(canvas.toDataURL('image/jpeg',0.75));
-  };
-  img.src=src;
-}
-
-// ── Apply images to cards in render functions ──
-// Helper: get background style for a card
-function cardBgStyle(slotId, customKey){
-  const img = (customKey && DB._d.customImages && DB._d.customImages[customKey])
-    || (DB._d.images && DB._d.images[slotId]) || '';
-  return img ? `background-image:url('${img}');background-size:cover;background-position:center;` : '';
+  if(!confirm('Clear ALL images?'))return;
+  DB._d.images={};DB._d.customImages={};
+  DB.save();showToast('ALL IMAGES CLEARED');pImageManager(g('mc'));
 }
 
 // ══ MODAL ══
