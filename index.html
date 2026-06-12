@@ -1018,13 +1018,52 @@ function tCardFn(t){
   const sc={open:'b-open',closed:'b-closed',ongoing:'b-ongoing'}[t.status]||'b-closed';
   const ac={open:'var(--green)',closed:'var(--muted)',ongoing:'var(--gold)'}[t.status];
   const regs=DB.registrations.filter(r=>r.tournamentId===t.id).length;
-  return`<div class="tcard" style="${_tbg}"><div class="tcard-accent" style="background:${ac}"></div>
-    <div class="tcard-top"><div><div class="tcard-name">${t.name}</div><div class="tcard-meta">📅 ${t.date} · 🗺 ${t.map||'TBD'} · 👥 ${regs}/${t.maxTeams||12}${t.format?' · '+t.format:''}</div></div><span class="badge ${sc}">${t.status.toUpperCase()}</span></div>
+  return`<div class="tcard" style="${_tbg}position:relative"><div class="tcard-accent" style="background:${ac}"></div><div style="position:relative;z-index:1">
+    <div class="tcard-top"><div><div class="tcard-name" style="text-shadow:0 1px 4px rgba(0,0,0,0.9)">${t.name}</div><div class="tcard-meta" style="color:#e0e0e0;font-weight:600;text-shadow:0 1px 3px rgba(0,0,0,0.9)">📅 ${t.date} · 🗺 ${t.map||'TBD'} · 👥 ${regs}/${t.maxTeams||12}${t.format?' · '+t.format:''}</div></div><span class="badge ${sc}">${t.status.toUpperCase()}</span></div>
     <div class="tcard-body"><div class="tcard-prize">🏆 ${t.prize||'—'}</div>${t.entry?`<div style="font-family:var(--font-mono);font-size:10px;color:var(--gold2)">ENTRY: ${t.entry}</div>`:''}</div>
-  </div>`;
+  </div></div>`;
 }
 
 // ── SEASONS PAGE ──
+// Full tournament card used in pTour page
+function tCardFnFull(t){
+  const _tbg = cardBgStyle('tournament_card','tour_'+t.id);
+  const sc={open:'b-open',closed:'b-closed',ongoing:'b-ongoing'}[t.status]||'b-closed';
+  const ac={open:'var(--green)',closed:'var(--muted)',ongoing:'var(--gold)'}[t.status];
+  const regs=DB.registrations.filter(r=>r.tournamentId===t.id).length;
+  const alreg=cu.role==='captain'&&DB.registrations.find(r=>r.tournamentId===t.id&&r.captainId===cu.id);
+  const regBtn=cu.role==='captain'&&t.status==='open'
+    ?(alreg?`<button class="btn btn-ghost btn-sm" disabled>✓ REGISTERED</button>`
+      :`<button class="btn btn-gold btn-sm" onclick="openRegTour('${t.id}')">⚡ REGISTER</button>`):'';
+  const adBtns=cu.role==='admin'?`<div style="display:flex;gap:5px;flex-wrap:wrap;margin-top:8px">
+    <button class="btn btn-purple btn-xs" onclick="pTourRegistrations('${t.id}')">📋 TEAMS (${regs})</button>
+    <button class="btn btn-green btn-xs" onclick="chgS('${t.id}','open')">OPEN</button>
+    <button class="btn btn-gold btn-xs" onclick="chgS('${t.id}','ongoing')">ONGOING</button>
+    <button class="btn btn-ghost btn-xs" onclick="chgS('${t.id}','closed')">CLOSE</button>
+    <button class="btn btn-red btn-xs" onclick="delTour('${t.id}')">DEL</button></div>`:'';
+  return`<div class="tcard" style="${_tbg}position:relative">
+    <div class="tcard-accent" style="background:${ac}"></div>
+    <div style="position:relative;z-index:1">
+    <div class="tcard-top">
+      <div style="flex:1">
+        <div class="tcard-name" style="font-size:18px;font-weight:800;text-shadow:0 1px 4px rgba(0,0,0,0.9)">${t.name}</div>
+        <div class="tcard-meta" style="color:#e0e0e0;font-weight:600;text-shadow:0 1px 3px rgba(0,0,0,0.9)">📅 ${t.date} · 🗺 ${t.map||'TBD'} · 👥 ${regs}/${t.maxTeams||12} teams</div>
+        ${t.desc?`<div style="font-size:12px;color:rgba(255,255,255,0.8);margin-top:3px;text-shadow:0 1px 2px rgba(0,0,0,0.9)">${t.desc}</div>`:''}
+        ${adBtns}
+      </div>
+      <div style="display:flex;flex-direction:column;align-items:flex-end;gap:7px">
+        <span class="badge ${sc}">${t.status.toUpperCase()}</span>
+        ${regBtn}
+      </div>
+    </div>
+    <div class="tcard-body">
+      <div class="tcard-prize" style="text-shadow:0 0 12px rgba(255,215,0,0.6)">🏆 ${t.prize||'TBD'}</div>
+      ${t.entry?`<div style="font-family:'Roboto Mono',monospace;font-size:11px;color:#ffc107;font-weight:700;text-shadow:0 1px 3px rgba(0,0,0,0.9)">ENTRY: ${t.entry}</div>`:''}
+    </div>
+    </div>
+  </div>`;
+}
+
 function pSeasons(el){
   el.innerHTML=`<div style="animation:pageIn .35s ease">
     <div class="sec-hd">
@@ -1105,31 +1144,7 @@ function pTour(el){
     <div class="sec-title"><div class="sec-bar"></div>TOURNAMENTS</div>
     ${cu.role==='admin'?`<button class="btn btn-cyan btn-sm" onclick="nav('add-tournament')">+ NEW</button>`:''}
   </div>
-  ${DB.tournaments.length?DB.tournaments.map(t=>{
-    const sc={open:'b-open',closed:'b-closed',ongoing:'b-ongoing'}[t.status]||'b-closed';
-    const ac={open:'var(--green)',closed:'var(--muted)',ongoing:'var(--gold)'}[t.status];
-    const regs=DB.registrations.filter(r=>r.tournamentId===t.id).length;
-    const alreg=cu.role==='captain'&&DB.registrations.find(r=>r.tournamentId===t.id&&r.captainId===cu.id);
-    const regBtn=cu.role==='captain'&&t.status==='open'?(alreg?`<button class="btn btn-ghost btn-sm" disabled>✓ REGISTERED</button>`:`<button class="btn btn-gold btn-sm" onclick="openRegTour('${t.id}')">⚡ REGISTER</button>`):'';
-    const adBtns=cu.role==='admin'?`<div style="display:flex;gap:5px;flex-wrap:wrap;margin-top:8px">
-      <button class="btn btn-purple btn-xs" onclick="pTourRegistrations('${t.id}')">📋 TEAMS (${DB.registrations.filter(r=>r.tournamentId===t.id).length})</button>
-      <button class="btn btn-green btn-xs" onclick="chgS('${t.id}','open')">OPEN</button>
-      <button class="btn btn-gold btn-xs" onclick="chgS('${t.id}','ongoing')">ONGOING</button>
-      <button class="btn btn-ghost btn-xs" onclick="chgS('${t.id}','closed')">CLOSE</button>
-      <button class="btn btn-red btn-xs" onclick="delTour('${t.id}')">DEL</button></div>`:'';
-    return`<div class="tcard"><div class="tcard-accent" style="background:${ac}"></div>
-      <div class="tcard-top">
-        <div style="flex:1"><div class="tcard-name">${t.name}</div>
-          <div class="tcard-meta">📅 ${t.date} · 🗺 ${t.map||'TBD'} · 👥 ${regs}/${t.maxTeams||12} teams${t.format?' · '+t.format:''}</div>
-          ${t.desc?`<div style="font-size:11px;color:rgba(255,255,255,0.35);margin-top:3px">${t.desc}</div>`:''}
-          ${adBtns}</div>
-        <div style="display:flex;flex-direction:column;align-items:flex-end;gap:7px">
-          <span class="badge ${sc}">${t.status.toUpperCase()}</span>${regBtn}</div>
-      </div>
-      <div class="tcard-body"><div class="tcard-prize">🏆 ${t.prize||'TBD'}</div>
-        ${t.entry?`<div style="font-family:var(--font-mono);font-size:10px;color:var(--gold2)">ENTRY: ${t.entry}</div>`:''}
-      </div></div>`;
-  }).join(''):'<div style="text-align:center;padding:40px;color:var(--muted);font-family:var(--font-mono);font-size:10px;letter-spacing:2px">// NO TOURNAMENTS YET</div>'}
+  ${DB.tournaments.length?DB.tournaments.map(t=>tCardFnFull(t)).join(''):'<div style="text-align:center;padding:40px;color:var(--muted);font-family:var(--font-mono);font-size:10px;letter-spacing:2px">// NO TOURNAMENTS YET</div>'}
   </div>`;
 }
 
@@ -1378,6 +1393,12 @@ function renderDailyForPlayer(myTeam){
     else available.push(m);
   });
 
+  const _imgStyle=m=>{
+    const img=(DB._d.customImages&&DB._d.customImages['match_'+m.id])||(DB._d.images&&DB._d.images['match_card_default'])||'';
+    if(!img) return '';
+    return "background-image:linear-gradient(180deg,rgba(6,10,28,0.10) 0%,rgba(6,10,28,0.35) 35%,rgba(6,10,28,0.75) 70%,rgba(6,10,28,0.92) 100%),url('"+img+"');background-size:cover;background-position:center;background-repeat:no-repeat;";
+  };
+
   let html=`<div class="page-tabs" style="margin-bottom:14px">
     <button class="page-tab active" id="dtab-avail" onclick="switchDailyTab('avail')">📋 AVAILABLE (${available.length})</button>
     <button class="page-tab" id="dtab-reg" onclick="switchDailyTab('reg')">✅ REGISTERED (${registered.length})</button>
@@ -1391,7 +1412,7 @@ function renderDailyForPlayer(myTeam){
       const isBanned=myTeam&&(m.bannedTeams||[]).includes(myTeam.id);
       const isClosed=m.status==='closed'||m.status==='completed';
       const full=m.maxTeams&&(m.brTeamIds||[]).length>=(m.maxTeams||12);
-      html+=`<div class="match-block" style="border-left:3px solid ${isBanned?'var(--red)':isClosed||full?'var(--muted2)':'var(--green)'};margin-bottom:10px">
+      html+=`<div class="match-block" style="border-left:3px solid ${isBanned?'var(--red)':isClosed||full?'var(--muted2)':'var(--green)'};margin-bottom:10px;${_imgStyle(m)}">
         <div class="match-top">
           <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
             <span class="match-type-badge mt-daily">📅 DAILY</span>
@@ -1414,6 +1435,7 @@ function renderDailyForPlayer(myTeam){
             :isCap?`<button class="btn btn-green btn-sm" onclick="openDailyJoin('${m.id}')">⚡ JOIN MATCH</button>`
             :`<span style="font-family:var(--font-mono);font-size:10px;color:var(--muted)">// SIRF CAPTAIN JOIN KAR SAKTA HAI</span>`}
         </div>
+        </div>
       </div>`;
     });
   }
@@ -1425,7 +1447,7 @@ function renderDailyForPlayer(myTeam){
   } else {
     registered.forEach(({m,req})=>{
       const approved=req.status==='approved';
-      html+=`<div class="match-block" style="border-left:3px solid ${approved?'var(--cyan)':req.status==='rejected'?'var(--red)':'var(--gold)'};margin-bottom:10px">
+      html+=`<div class="match-block" style="border-left:3px solid ${approved?'var(--cyan)':req.status==='rejected'?'var(--red)':'var(--gold)'};margin-bottom:10px;${_imgStyle(m)}">
         <div class="match-top">
           <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
             <span class="match-type-badge mt-daily">📅 DAILY</span>
@@ -1553,12 +1575,17 @@ function renderMatchCard(m){
 
   const borderCol=isMyMatch?'rgba(0,207,255,0.4)':isDaily?'rgba(0,230,118,0.25)':'rgba(139,92,246,0.25)';
   const glowCol=isDaily?'rgba(0,200,100,0.12)':'rgba(139,92,246,0.15)';
+  const _cardImg=(DB._d.customImages&&DB._d.customImages['match_'+m.id])||(DB._d.images&&DB._d.images['match_card_default'])||'';
+  const _imgBg=_cardImg?"background-image:url('"+_cardImg+"');background-size:cover;background-position:center;background-repeat:no-repeat;":'';
 
-  return '<div style="border:1px solid '+borderCol+';border-radius:10px;margin-bottom:14px;overflow:hidden;background:rgba(6,10,28,0.95)">'
+  return '<div style="border:1px solid '+borderCol+';border-radius:10px;margin-bottom:14px;overflow:hidden;position:relative;'+(_imgBg||'background:rgba(6,10,28,0.95);')+'">'
+    // ── FULL-CARD IMAGE OVERLAY ──
+    +(_imgBg?'<div style="position:absolute;inset:0;background:linear-gradient(180deg,rgba(6,10,28,0.10) 0%,rgba(6,10,28,0.35) 35%,rgba(6,10,28,0.75) 70%,rgba(6,10,28,0.92) 100%);z-index:0"></div>':'')
+    +'<div style="position:relative;z-index:1'+(_imgBg?';background:transparent':'')+'">'
 
     // ── HEADER ──
-    +'<div style="position:relative;min-height:85px;display:flex;flex-direction:column;justify-content:flex-end;background:linear-gradient(135deg,rgba(8,15,40,0.98),rgba(15,8,35,0.95));border-bottom:1px solid rgba(255,255,255,0.06);overflow:hidden;">'
-    +'<div style="position:absolute;inset:0;background:radial-gradient(ellipse at 80% 50%,'+glowCol+' 0%,transparent 70%)"></div>'
+    +'<div style="position:relative;min-height:85px;display:flex;flex-direction:column;justify-content:flex-end;'+(_imgBg?'':'background:linear-gradient(135deg,rgba(8,15,40,0.98),rgba(15,8,35,0.95));')+'border-bottom:1px solid rgba(255,255,255,0.06);overflow:hidden;">'
+    +(_imgBg?'':'<div style="position:absolute;inset:0;background:radial-gradient(ellipse at 80% 50%,'+glowCol+' 0%,transparent 70%)"></div>')
     +'<div style="position:relative;z-index:1;padding:14px 16px 12px;display:flex;align-items:flex-end;justify-content:space-between;gap:8px">'
     +'<div>'
     +'<div style="font-weight:800;font-size:15px;letter-spacing:2px;color:#fff">'+(isDaily?'📅 ':'🏆 ')+(m.label||m.tournament||m.name||(isDaily?'DAILY MATCH':'TOURNAMENT MATCH'))+'</div>'
@@ -1644,7 +1671,7 @@ function renderMatchCard(m){
 
     +joinSection
     +adminBtns
-    +'</div>';
+    +'</div></div>';
 }
 
 // ── ADMIN: Choose match type to create ──
@@ -2478,6 +2505,8 @@ function sendInvite(playerId){
   DB.save();showToast('✓ INVITE SENT',false,'ok');pNotifications(g('mc'));
 }
 function sendJoinReq(captainId){
+  if(cu.role!=='player'){showToast('⚠ ONLY PLAYERS CAN JOIN TEAMS',true);return;}
+  if(cu.teamId){showToast('⚠ ALREADY IN A TEAM',true);return;}
   if(DB.requests.find(r=>r.fromUserId===cu.id&&r.toUserId===captainId&&r.type==='player_request'&&r.status==='pending')){showToast('⚠ REQUEST ALREADY SENT',true);return;}
   DB.requests.push({id:'req'+Date.now(),fromUserId:cu.id,toUserId:captainId,type:'player_request',status:'pending',at:Date.now()});
   DB.save();showToast('✓ JOIN REQUEST SENT',false,'ok');pNotifications(g('mc'));
@@ -2503,7 +2532,9 @@ function acceptJoin(reqId){
   if(!team){showToast('⚠ CREATE YOUR TEAM FIRST',true);return;}
   if(team.members.length>=6){showToast('⚠ TEAM FULL',true);return;}
   if(!team.members.includes(player.id)){team.members.push(player.id);}
-  player.teamId=team.id;req.status='accepted';
+  player.teamId=team.id;
+  player.role='player'; // Ensure role is player when joining a team
+  req.status='accepted';
   DB.save();updateNotifBadge();buildSidebar();showToast('✓ '+player.name+' JOINED YOUR TEAM',false,'ok');pNotifications(g('mc'));
 }
 function approveRole(reqId){
@@ -2596,7 +2627,7 @@ function pMyTeam(el){
   </div>`;
 }
 function createTeam(){const name=v('ctN'),tag=v('ctT').toUpperCase();if(!name||!tag){showToast('⚠ NAME & TAG REQUIRED',true);return;}const teamCode='ZX-'+Math.random().toString(36).substring(2,6).toUpperCase()+'-'+Math.random().toString(36).substring(2,5).toUpperCase();
-  const t={id:'tm'+Date.now(),name,tag,captainId:cu.id,members:[cu.id],code:teamCode,createdAt:Date.now()};
+  const t={id:'tm'+Date.now(),name,tag,captainId:cu.id,members:[],code:teamCode,createdAt:Date.now()};
   cu.teamId=t.id;DB.teams.push(t);cu.teamId=t.id;DB.save();showToast('✓ TEAM CREATED',false,'ok');nav('my-team');}
 function openEditTeam(tid){const t=DB.teams.find(x=>x.id===tid);openMo(`<button class="mo-close" onclick="closeMo()">✕</button><div class="mo-title">✏ EDIT TEAM</div><label class="fl">Team Name</label><input class="fi" id="et-n" value="${t.name}"/><label class="fl">Team Tag</label><input class="fi" id="et-t" value="${t.tag}" maxlength="5"/><button class="btn btn-cyan btn-full" onclick="saveTeamEdit('${tid}')">⚡ SAVE</button>`);}
 function saveTeamEdit(tid){const t=DB.teams.find(x=>x.id===tid),n=v('et-n'),tg=v('et-t').toUpperCase();if(!n||!tg){showToast('⚠ REQUIRED',true);return;}t.name=n;t.tag=tg;DB.save();closeMo();showToast('✓ UPDATED',false,'ok');nav('my-team');}
@@ -3643,7 +3674,8 @@ function pMatches_OLD(el){
 }
 
 function renderMatchBlock(m, role, myTeam){
-  const _mbg = cardBgStyle('match_card_default','match_'+m.id);
+  const _mImg=(DB._d.customImages&&DB._d.customImages['match_'+m.id])||(DB._d.images&&DB._d.images['match_card_default'])||'';
+  const _mbg=_mImg?"background-image:linear-gradient(180deg,rgba(6,10,28,0.10) 0%,rgba(6,10,28,0.35) 35%,rgba(6,10,28,0.75) 70%,rgba(6,10,28,0.92) 100%),url('"+_mImg+"');background-size:cover;background-position:center;background-repeat:no-repeat;":'';
   const t1=DB.teams.find(x=>x.id===m.team1Id);
   const t2=DB.teams.find(x=>x.id===m.team2Id);
   const isBR = m.matchType==='BR';
@@ -3927,10 +3959,27 @@ function openCreateMatch(){
       <div><label class="fl">Time</label><input class="fi" id="nm-time" placeholder="e.g. 8:30 PM"/></div>
     </div>
 
+    <label class="fl">🖼 Match Cover Image (URL — optional)</label>
+    <div id="nm-img-preview-wrap" style="margin-bottom:10px">
+      <div style="background:rgba(0,245,255,0.03);border:2px dashed rgba(0,245,255,0.2);width:100%;height:90px;display:flex;align-items:center;justify-content:center;font-family:var(--font-mono);font-size:9px;color:var(--muted);flex-direction:column;gap:6px"><span style="font-size:22px">🖼</span>NO IMAGE — PASTE URL BELOW</div>
+    </div>
+    <input class="fi" id="nm-img-data" placeholder="Paste image URL (ImgBB, Imgur...)" oninput="previewNmMatchImg()"/>
+
     <div class="err-msg" id="nm-err"></div>
     <button class="btn btn-cyan btn-full" onclick="saveNewMatch()">⚡ CREATE MATCH</button>
   `);
   setTimeout(()=>{pickMatchType('DAILY');pickGameMode('BR');pickMatchFormat('SQUAD');},50);
+}
+
+function previewNmMatchImg(){
+  const url=(g('nm-img-data')?.value||'').trim();
+  const wrap=g('nm-img-preview-wrap');
+  if(!wrap)return;
+  if(url){
+    wrap.innerHTML=`<img src="${url}" style="width:100%;height:90px;object-fit:cover;border-radius:4px;border:1px solid rgba(0,245,255,0.3)" onerror="this.style.display='none'"/>`;
+  }else{
+    wrap.innerHTML=`<div style="background:rgba(0,245,255,0.03);border:2px dashed rgba(0,245,255,0.2);width:100%;height:90px;display:flex;align-items:center;justify-content:center;font-family:var(--font-mono);font-size:9px;color:var(--muted);flex-direction:column;gap:6px"><span style="font-size:22px">🖼</span>NO IMAGE — PASTE URL ABOVE</div>`;
+  }
 }
 
 function previewNmQR(e){
@@ -4110,6 +4159,8 @@ function saveNewMatch(){
   const qrImage=isDaily?(g('nm-qr-data')?.value||''):'';
   const label=isDaily?(v('nm-label')||''):'';
 
+  const matchImage=(g('nm-img-data')?.value||'').trim();
+
   const match={
     id:'m2_'+Date.now(),
     matchType:isDaily?'daily':'tournament',
@@ -4123,6 +4174,7 @@ function saveNewMatch(){
     team1:t1?.name||'',team2:t2?.name||'',
     brTeamIds,
     entry,prize,qrImage,
+    image:matchImage,
     date:v('nm-date'),time:v('nm-time'),
     roomId:'',roomPass:'',
     roomReleased:false,result:'',brScores:[],
@@ -4131,7 +4183,13 @@ function saveNewMatch(){
     createdAt:Date.now()
   };
   if(!DB._d.matches)DB._d.matches=[];
-  DB.matches.push(match);DB.save();
+  DB.matches.push(match);
+  // Save match image if provided
+  if(match.image){
+    if(!DB._d.customImages) DB._d.customImages={};
+    DB._d.customImages['match_'+match.id]=match.image;
+  }
+  DB.save();
   // Notify teams (only for tournament matches)
   if(!isDaily){
     brTeamIds.forEach(tid=>{
@@ -4295,11 +4353,24 @@ function openEditMatch(matchId){
     </select>
     <label class="fl">Room ID</label><input class="fi" id="em-rid" value="${m.roomId||''}"/>
     <label class="fl">Room Password</label><input class="fi" id="em-rpass" value="${m.roomPass||''}"/>
+    <label class="fl">🖼 Match Cover Image (URL)</label>
+    <div style="margin-bottom:10px">
+      ${m.image?`<img src="${m.image}" style="width:100%;height:90px;object-fit:cover;border-radius:4px;border:1px solid rgba(0,245,255,0.3)" onerror="this.style.display='none'"/>`
+        :`<div style="background:rgba(0,245,255,0.03);border:2px dashed rgba(0,245,255,0.2);width:100%;height:90px;display:flex;align-items:center;justify-content:center;font-family:var(--font-mono);font-size:9px;color:var(--muted)">NO IMAGE</div>`}
+    </div>
+    <input class="fi" id="em-img" placeholder="Paste image URL" value="${m.image||''}"/>
     <button class="btn btn-cyan btn-full" onclick="saveEditMatch('${matchId}')">⚡ SAVE</button>`);
 }
 function saveEditMatch(id){
   const m=DB.matches.find(x=>x.id===id);if(!m)return;
   m.date=v('em-date');m.time=v('em-time');m.round=v('em-round');m.roomId=v('em-rid');m.roomPass=v('em-rpass');
+  m.image=v('em-img');
+  if(m.image){
+    if(!DB._d.customImages) DB._d.customImages={};
+    DB._d.customImages['match_'+m.id]=m.image;
+  } else if(DB._d.customImages){
+    delete DB._d.customImages['match_'+m.id];
+  }
   DB.save();closeMo();showToast('✓ MATCH UPDATED',false,'ok');pMatches(g('mc'));
 }
 function deleteMatch2(id){if(!confirm('Delete match?'))return;DB._d.matches=DB.matches.filter(x=>x.id!==id);DB.save();showToast('DELETED');pMatches(g('mc'));}
@@ -4591,10 +4662,11 @@ function getImg(slotId){
 }
 
 function cardBgStyle(slotId, customKey){
-  const img = (customKey && DB._d.customImages && DB._d.customImages[customKey])
-    || (DB._d.images && DB._d.images[slotId]) || '';
+  if(!DB._d) return '';
+  const img=(customKey&&DB._d.customImages&&DB._d.customImages[customKey])
+    ||(slotId&&DB._d.images&&DB._d.images[slotId])||'';
   if(!img) return '';
-  return `background-image:url('${img}');background-size:cover;background-position:center;background-repeat:no-repeat;`;
+  return "background-image:url('"+img+"');background-size:cover;background-position:center;background-repeat:no-repeat;";
 }
 
 function pImageManager(el){
@@ -4608,8 +4680,9 @@ function pImageManager(el){
   });
 
   const tournaments=DB.tournaments||[];
-  const matches=DB.matches||[];
-  const dailyMatches=DB._d.dailyMatches||[];
+  const allMatches=DB.matches||[];
+  const matches=allMatches.filter(m=>m.matchType!=='daily'&&m.matchType!=='DAILY');
+  const dailyMatches=allMatches.filter(m=>m.matchType==='daily'||m.matchType==='DAILY');
 
   const renderSlotRow = (slotId, label, key) => {
     const img = key ? (DB._d.customImages[key]||'') : getImg(slotId);
@@ -4656,13 +4729,13 @@ function pImageManager(el){
     </div>`:''}
 
     ${matches.length?`<div class="xcard" style="margin-bottom:16px">
-      <div class="xcard-t">⚔️ Per-Match Images</div>
-      ${matches.map(m=>renderSlotRow(null,(m.team1||'Team1')+' vs '+(m.team2||'Team2'),'match_'+m.id)).join('')}
+      <div class="xcard-t">⚔️ Per-Tournament-Match Images</div>
+      ${matches.map(m=>renderSlotRow(null,(m.team1||'Team1')+' vs '+(m.team2||'Team2')+' ('+(m.round||'')+')','match_'+m.id)).join('')}
     </div>`:''}
 
     ${dailyMatches.length?`<div class="xcard" style="margin-bottom:16px">
       <div class="xcard-t">⚡ Per-Daily Match Images</div>
-      ${dailyMatches.map(dm=>renderSlotRow(null,dm.title||'Daily Match','dm_'+dm.id)).join('')}
+      ${dailyMatches.map(dm=>renderSlotRow(null,dm.label||dm.round||'Daily Match','match_'+dm.id)).join('')}
     </div>`:''}
 
   </div>`;
