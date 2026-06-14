@@ -7,7 +7,6 @@
 <!-- Firebase -->
 <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore-compat.js"></script>
-<script src="https://checkout.razorpay.com/v1/checkout.js"></script>
 
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=Roboto+Mono:wght@400;500&display=swap" rel="stylesheet"/>
 <style>
@@ -198,9 +197,9 @@ textarea.fi{resize:vertical;}
 .tcard-accent{position:absolute;left:0;top:0;bottom:0;width:3px;}
 .tcard-top{background:linear-gradient(135deg,rgba(0,245,255,0.04),rgba(191,95,255,0.04));padding:13px 17px;display:flex;align-items:flex-start;justify-content:space-between;gap:10px;border-bottom:1px solid rgba(0,245,255,0.05);}
 .tcard-body{padding:10px 17px;display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;}
-.tcard-name{font-family:var(--font-hd);font-size:16px;font-weight:800;letter-spacing:2px;text-transform:uppercase;}
-.tcard-meta{font-family:var(--font-mono);font-size:10px;color:var(--muted);margin-top:3px;line-height:1.6;}
-.tcard-prize{font-family:var(--font-hd);font-size:18px;font-weight:900;color:var(--gold);text-shadow:0 0 12px rgba(255,215,0,.35);}
+.tcard-name{font-family:var(--font-hd);font-size:16px;font-weight:800;letter-spacing:1.5px;text-transform:uppercase;color:#fff;}
+.tcard-meta{font-family:var(--font-mono);font-size:10px;color:var(--muted);margin-top:4px;line-height:1.7;}
+.tcard-prize{font-family:var(--font-hd);font-size:18px;font-weight:900;color:var(--gold);}
 
 /* BADGES */
 .badge{font-family:var(--font-hd);font-size:8px;padding:3px 9px;letter-spacing:2px;text-transform:uppercase;font-weight:700;flex-shrink:0;}
@@ -614,16 +613,10 @@ html, body {
 // ║  AI ko theme/UI change karne ke liye yahan aane ki      ║
 // ║  zarurat NAHI — ye section touch mat karna              ║
 // ╠══════════════════════════════════════════════════════════╣
-// ║  PAYMENT GATEWAY (Razorpay)                             ║
+// ║  WALLET / TOKEN SYSTEM (UTR based, no gateway)          ║
 // ╚══════════════════════════════════════════════════════════╝
 const ZONEX_CONFIG = {
-  // ── Razorpay Keys ──────────────────────────────────────
-  // TEST key (fake payments):  rzp_test_XXXXXXXXXXXXXXX
-  // LIVE key (real payments):  rzp_live_XXXXXXXXXXXXXXX
-  // Sirf neeche wali line change karo jab live karna ho:
-  RAZORPAY_KEY: 'rzp_test_SztSNvK2gn4Bbb',
-
-  // ── Site Name (Razorpay popup mein dikhta hai) ─────────
+  // ── Site Name ───────────────────────────────────────────
   SITE_NAME: 'ZoneX Esports',
 
   // ── Currency ───────────────────────────────────────────
@@ -633,6 +626,7 @@ const ZONEX_CONFIG = {
 // ⚠️  UPAR WALE SECTION KE BAAD KUCH EDIT MAT KARNA
 //     JAB TAK PAYMENT SYSTEM SAMAJH NA AYE
 // ══════════════════════════════════════════════════════════
+
 
 // ══════════════════════════════════════════════
 // FIREBASE CONFIG + INIT (with localStorage fallback)
@@ -663,7 +657,7 @@ try {
 // DATABASE — Firebase backed with localStorage fallback
 // ══════════════════════════════════════════════
 const DB = {
-  _d: {users:[],tournaments:[],teams:[],registrations:[],matches:[],requests:[],seasons:[],settings:{requireApproval:false},chat:{},pointTables:{}},
+  _d: {users:[],tournaments:[],teams:[],registrations:[],matches:[],requests:[],seasons:[],settings:{requireApproval:false},chat:{},pointTables:{},walletRequests:[],withdrawRequests:[]},
   _loaded: false,
   _listeners: [],
 
@@ -678,6 +672,8 @@ const DB = {
     if(!this._d.settings) this._d.settings={requireApproval:false};
     if(!this._d.chat) this._d.chat={};
     if(!this._d.pointTables) this._d.pointTables={};
+    if(!this._d.walletRequests) this._d.walletRequests=[];
+    if(!this._d.withdrawRequests) this._d.withdrawRequests=[];
   },
 
   _ensureAdmin(){
@@ -733,6 +729,25 @@ const DB = {
     this._loaded = true;
     g('loading').style.display='none';
     g('auth-page').style.cssText='display:flex';
+
+    // ── Auto-clear team chats older than 24h ──
+    this._autoClearChats();
+  },
+
+  _autoClearChats(){
+    if(!this._d.chat) return;
+    const cutoff=Date.now()-(24*60*60*1000); // 24 hours
+    let changed=false;
+    Object.keys(this._d.chat).forEach(key=>{
+      const room=this._d.chat[key];
+      if(!room||!room.msgs) return;
+      const filtered=room.msgs.filter(m=>m.at&&m.at>cutoff);
+      if(filtered.length!==room.msgs.length){
+        room.msgs=filtered;
+        changed=true;
+      }
+    });
+    if(changed) this.save();
   },
 
   // Real-time listener — only works with Firebase
@@ -744,6 +759,8 @@ const DB = {
         this._d = newData;
         if(!this._d.chat) this._d.chat={};
         if(!this._d.pointTables) this._d.pointTables={};
+        if(!this._d.walletRequests) this._d.walletRequests=[];
+        if(!this._d.withdrawRequests) this._d.withdrawRequests=[];
         updateNotifBadge();
         buildSidebar();
       }
@@ -758,6 +775,8 @@ const DB = {
   get matches(){return this._d.matches||[];},
   get requests(){return this._d.requests||[];},
   get seasons(){return this._d.seasons||[];},
+  get walletRequests(){return this._d.walletRequests||[];},
+  get withdrawRequests(){return this._d.withdrawRequests||[];},
 };
 
 let cu=null,regRole='player';
@@ -800,7 +819,7 @@ function doRegister(){
   const needsApproval = DB._d.settings && DB._d.settings.requireApproval;
   const status = needsApproval ? 'pending' : 'approved';
 
-  const u={id:'u'+Date.now(),phone:ph,whatsapp:wa,password:pw,name,ign,uid,role:regRole,teamId:null,joinedRole:regRole,status:status};
+  const u={id:'u'+Date.now(),phone:ph,whatsapp:wa,password:pw,name,ign,uid,role:regRole,teamId:null,joinedRole:regRole,status:status,walletBalance:0};
   DB.users.push(u);
   DB.save();
 
@@ -854,11 +873,12 @@ function getMyNotifCount(){
   if(cu.role==='admin'){
     const roleReqs=DB.requests.filter(r=>r.type==='role_change'&&r.status==='pending').length;
     const dailyJoinPending=DB.requests.filter(r=>r.type==='daily_join'&&r.status==='pending').length;
+    const walletPending=getWalletPendingCount();
     const chatUnread=DB.teams?DB.teams.reduce((sum,t)=>{
       const key='adminchat_'+t.id;
       return sum+(DB._d.chat&&DB._d.chat[key]?DB._d.chat[key].msgs.filter(m=>m.userId!=='admin1'&&!m.read).length:0);
     },0):0;
-    return roleReqs+dailyJoinPending+chatUnread;
+    return roleReqs+dailyJoinPending+walletPending+chatUnread;
   }
   return matchAlerts;
 }
@@ -876,8 +896,8 @@ function updateNotifBadge(){
 }
 
 const menus={
-  admin:[{id:'dashboard',l:'Dashboard'},{id:'seasons',l:'Seasons'},{id:'tournaments',l:'Tournaments'},{id:'matches',l:'Matches'},{id:'schedule',l:'Daily Match'},{id:'point-table',l:'Point Table'},{id:'teams',l:'All Teams'},{id:'players',l:'All Players'},{id:'team-chats',l:'Team Chats'},{id:'approvals',l:'Approvals'},{id:'notifications',l:'Notifications'},{id:'add-tournament',l:'Add Tournament'},{id:'image-manager',l:'Image Manager'}],
-  captain:[{id:'dashboard',l:'Dashboard'},{id:'seasons',l:'Seasons'},{id:'tournaments',l:'Tournaments'},{id:'matches',l:'My Matches'},{id:'my-team',l:'My Team'},{id:'point-table',l:'Point Table'},{id:'admin-chat',l:'Contact Admin'},{id:'notifications',l:'Notifications'},{id:'profile',l:'My Profile'}],
+  admin:[{id:'dashboard',l:'Dashboard'},{id:'seasons',l:'Seasons'},{id:'tournaments',l:'Tournaments'},{id:'matches',l:'Matches'},{id:'schedule',l:'Daily Match'},{id:'point-table',l:'Point Table'},{id:'teams',l:'All Teams'},{id:'players',l:'All Players'},{id:'team-chats',l:'Team Chats'},{id:'wallet',l:'Wallet Requests'},{id:'approvals',l:'Approvals'},{id:'notifications',l:'Notifications'},{id:'add-tournament',l:'Add Tournament'},{id:'image-manager',l:'Image Manager'}],
+  captain:[{id:'dashboard',l:'Dashboard'},{id:'seasons',l:'Seasons'},{id:'tournaments',l:'Tournaments'},{id:'matches',l:'My Matches'},{id:'my-team',l:'My Team'},{id:'wallet',l:'Wallet'},{id:'point-table',l:'Point Table'},{id:'admin-chat',l:'Contact Admin'},{id:'notifications',l:'Notifications'},{id:'profile',l:'My Profile'}],
   player:[{id:'dashboard',l:'Dashboard'},{id:'seasons',l:'Seasons'},{id:'tournaments',l:'Tournaments'},{id:'matches',l:'My Matches'},{id:'point-table',l:'Point Table'},{id:'admin-chat',l:'Contact Admin'},{id:'notifications',l:'Notifications'},{id:'profile',l:'My Profile'}],
 };
 const ico={
@@ -896,15 +916,21 @@ const ico={
   'add-tournament':`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="9"/><line x1="12" y1="8" x2="12" y2="16"/><line x1="8" y1="12" x2="16" y2="12"/></svg>`,
   'my-team':`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>`,
   profile:`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="8" r="4"/><path d="M4 21v-1a8 8 0 0 1 16 0v1"/></svg>`,
+  wallet:`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="2" y="6" width="20" height="14" rx="2"/><path d="M2 10h20"/><circle cx="17" cy="15" r="1.2" fill="currentColor"/></svg>`,
 };
 
+function getWalletPendingCount(){
+  return (DB.walletRequests||[]).filter(r=>r.status==='pending').length+(DB.withdrawRequests||[]).filter(r=>r.status==='pending').length;
+}
 function buildSidebar(){
   const sb=g('sidebar');
   const items=menus[cu.role]||menus.player;
   const nc=getMyNotifCount();
   sb.innerHTML=`<div class="sb-sec">// Nav</div>`+items.map(p=>{
     const isNotif=p.id==='notifications';
-    return`<button class="sb-item" id="sb-${p.id}" onclick="nav('${p.id}')">${ico[p.id]||''} ${p.l}${isNotif&&nc>0?`<span class="sb-notif" id="sb-notif-count">${nc}</span>`:''}
+    const isWallet=p.id==='wallet'&&cu.role==='admin';
+    const wc=isWallet?getWalletPendingCount():0;
+    return`<button class="sb-item" id="sb-${p.id}" onclick="nav('${p.id}')">${ico[p.id]||''} ${p.l}${isNotif&&nc>0?`<span class="sb-notif" id="sb-notif-count">${nc}</span>`:''}${isWallet&&wc>0?`<span class="sb-notif">${wc}</span>`:''}
     </button>`;
   }).join('');
 }
@@ -963,7 +989,7 @@ function nav(page){
   document.querySelectorAll('.sb-item').forEach(el=>el.classList.remove('active'));
   const sb=g('sb-'+page);if(sb)sb.classList.add('active');
   updateMobNav(page);
-  ({dashboard:pDash,seasons:pSeasons,tournaments:pTour,schedule:pSchedule,matches:pMatches,teams:pTeams,players:pPlayers,notifications:pNotifications,approvals:pAdminApprovals,'image-manager':pImageManager,'point-table':pPointTable,'team-chats':pTeamChats,'admin-chat':()=>openMyAdminChat(),'add-tournament':pAddTour,'my-team':pMyTeam,profile:pProfile}[page]||pDash)(g('mc'));
+  ({dashboard:pDash,seasons:pSeasons,tournaments:pTour,schedule:pSchedule,matches:pMatches,teams:pTeams,players:pPlayers,notifications:pNotifications,approvals:pAdminApprovals,'image-manager':pImageManager,'point-table':pPointTable,'team-chats':pTeamChats,'admin-chat':()=>openMyAdminChat(),'add-tournament':pAddTour,'my-team':pMyTeam,profile:pProfile,wallet:pWalletPage}[page]||pDash)(g('mc'));
 }
 
 // ════════════════════════════════
@@ -986,7 +1012,10 @@ function pDash(el){
         <div style="font-family:var(--font-mono);font-size:11px;color:var(--gold);letter-spacing:2px;margin-top:5px">🔑 CODE: ${mt.code||'N/A'}</div></div>
         <div style="margin-left:auto;text-align:right"><div style="font-family:var(--font-hd);font-size:26px;color:var(--cyan)">${mt.members.length+1}<span style="font-size:12px;color:#607d8b">/6</span></div><div style="font-family:var(--font-mono);font-size:8px;color:var(--muted)">MEMBERS</div></div>
       </div>
-      <button class="btn btn-purple btn-sm" onclick="nav('my-team')" style="margin-top:6px">» MANAGE TEAM</button></div>`
+      <div style="display:flex;gap:8px;margin-top:8px">
+        <button class="btn btn-purple btn-sm" onclick="nav('my-team')">» MANAGE TEAM</button>
+        <button class="btn btn-gold btn-sm" onclick="nav('wallet')">🪙 ${walletBal(mt?DB.users.find(u=>u.id===mt.captainId)||cu:cu)} TOKENS</button>
+      </div></div>`
     :`<div class="xcard"><div class="xcard-t">⚠ No Team Yet</div><p style="color:var(--muted);font-size:13px;margin-bottom:10px">Create a team to participate in tournaments.</p><button class="btn btn-cyan btn-sm" onclick="nav('my-team')">» CREATE TEAM</button></div>`;
   }
   if(cu.role==='player'){
@@ -1041,14 +1070,20 @@ function tCardFnFull(t){
     <button class="btn btn-gold btn-xs" onclick="chgS('${t.id}','ongoing')">ONGOING</button>
     <button class="btn btn-ghost btn-xs" onclick="chgS('${t.id}','closed')">CLOSE</button>
     <button class="btn btn-red btn-xs" onclick="delTour('${t.id}')">DEL</button></div>`:'';
+  // BR / CS badge
+  const gameModeBadge=t.gameMode?`<span style="font-family:var(--font-mono);font-size:9px;padding:2px 8px;border-radius:3px;font-weight:700;${t.gameMode==='CS'?'background:rgba(255,107,43,0.15);color:var(--orange);border:1px solid rgba(255,107,43,0.35)':'background:rgba(0,180,255,0.12);color:var(--cyan);border:1px solid rgba(0,180,255,0.3)'}">${t.gameMode==='CS'?'⚔ CS':'🎯 BR'}</span>`:'';
+  const fmtBadge=t.format?`<span style="font-family:var(--font-mono);font-size:9px;padding:2px 8px;border-radius:3px;background:rgba(191,95,255,0.12);color:var(--purple);border:1px solid rgba(191,95,255,0.3)">${t.format}</span>`:'';
   return`<div class="tcard" style="${_tbg}position:relative">
     <div class="tcard-accent" style="background:${ac}"></div>
     <div style="position:relative;z-index:1">
     <div class="tcard-top">
       <div style="flex:1">
-        <div class="tcard-name" style="font-size:18px;font-weight:800;text-shadow:0 1px 4px rgba(0,0,0,0.9)">${t.name}</div>
-        <div class="tcard-meta" style="color:#e0e0e0;font-weight:600;text-shadow:0 1px 3px rgba(0,0,0,0.9)">📅 ${t.date} · 🗺 ${t.map||'TBD'} · 👥 ${regs}/${t.maxTeams||12} teams</div>
-        ${t.desc?`<div style="font-size:12px;color:rgba(255,255,255,0.8);margin-top:3px;text-shadow:0 1px 2px rgba(0,0,0,0.9)">${t.desc}</div>`:''}
+        <div style="display:flex;align-items:center;gap:7px;flex-wrap:wrap;margin-bottom:5px">
+          ${gameModeBadge}${fmtBadge}
+        </div>
+        <div class="tcard-name">${t.name}</div>
+        <div class="tcard-meta">📅 ${t.date} · 🗺 ${t.map||'TBD'} · 👥 ${regs}/${t.maxTeams||12} teams</div>
+        ${t.desc?`<div style="font-size:12px;color:rgba(255,255,255,0.55);margin-top:3px">${t.desc}</div>`:''}
         ${adBtns}
       </div>
       <div style="display:flex;flex-direction:column;align-items:flex-end;gap:7px">
@@ -1057,8 +1092,8 @@ function tCardFnFull(t){
       </div>
     </div>
     <div class="tcard-body">
-      <div class="tcard-prize" style="text-shadow:0 0 12px rgba(255,215,0,0.6)">🏆 ${t.prize||'TBD'}</div>
-      ${t.entry?`<div style="font-family:'Roboto Mono',monospace;font-size:11px;color:#ffc107;font-weight:700;text-shadow:0 1px 3px rgba(0,0,0,0.9)">ENTRY: ${t.entry}</div>`:''}
+      <div class="tcard-prize">🏆 ${t.prize||'TBD'}</div>
+      ${t.entry?`<div style="font-family:var(--font-mono);font-size:11px;color:var(--gold2);font-weight:700">ENTRY: ${t.entry}</div>`:''}
     </div>
     </div>
   </div>`;
@@ -1155,6 +1190,8 @@ function openRegTour(tId){
   if(!mt){showToast('⚠ CREATE YOUR TEAM FIRST',true);return;}
   const needsPay=t.entry&&t.entry.toLowerCase()!=='free'&&t.entry.trim()!=='';
   const amt=needsPay?parseAmount(t.entry):0;
+  const bal=walletBal(cu);
+  const insufficient=needsPay&&bal<amt;
   openMo(`<button class="mo-close" onclick="closeMo()">✕</button>
     <div class="mo-title">⚡ REGISTER TEAM</div>
     <div style="background:rgba(0,245,255,0.04);border:1px solid rgba(0,245,255,0.12);padding:13px;margin-bottom:14px;border-radius:6px">
@@ -1167,34 +1204,31 @@ function openRegTour(tId){
       <div style="font-family:var(--font-mono);font-size:10px;color:var(--muted);margin-top:3px">${mt.members.length} members</div>
     </div>
     ${needsPay?`
-    <div style="background:rgba(255,193,7,0.06);border:1px solid rgba(255,193,7,0.25);padding:14px;border-radius:6px;margin-bottom:14px;text-align:center">
+    <div style="background:rgba(255,193,7,0.06);border:1px solid rgba(255,193,7,0.25);padding:14px;border-radius:6px;margin-bottom:10px;text-align:center">
       <div style="font-family:var(--font-mono);font-size:9px;color:var(--gold);letter-spacing:3px;margin-bottom:8px">// ENTRY FEE</div>
-      <div style="font-family:var(--font-hd);font-size:32px;font-weight:900;color:var(--gold)">₹${amt}</div>
-      <div style="font-family:var(--font-mono);font-size:9px;color:var(--muted);margin-top:4px">UPI · Card · NetBanking · Wallet</div>
-    </div>`:``}
+      <div style="font-family:var(--font-hd);font-size:32px;font-weight:900;color:var(--gold)">🪙${amt}</div>
+      <div style="font-family:var(--font-mono);font-size:9px;color:var(--muted);margin-top:4px">Wallet Balance: 🪙${bal}</div>
+    </div>
+    ${insufficient?`<div style="background:rgba(244,67,54,0.06);border:1px solid rgba(244,67,54,0.25);padding:10px 12px;border-radius:6px;margin-bottom:14px;text-align:center">
+      <div style="font-family:var(--font-mono);font-size:10px;color:var(--red);letter-spacing:1px">⚠ INSUFFICIENT WALLET BALANCE</div>
+      <button class="btn btn-cyan btn-sm" style="margin-top:8px" onclick="closeMo();nav('wallet')">➕ ADD MONEY TO WALLET</button>
+    </div>`:''}`:``}
     <div class="err-msg" id="reg-err"></div>
-    <button class="btn btn-gold btn-full" onclick="confirmReg('${tId}','${mt.id}',${needsPay},${amt})">${needsPay?`💳 PAY ₹${amt} & REGISTER`:'⚡ CONFIRM REGISTRATION (FREE)'}</button>`);
+    <button class="btn btn-gold btn-full" ${insufficient?'disabled':''} onclick="confirmReg('${tId}','${mt.id}',${needsPay},${amt})">${needsPay?`🪙 PAY ${amt} TOKENS & REGISTER`:'⚡ CONFIRM REGISTRATION (FREE)'}</button>`);
 }
 
 async function confirmReg(tId,teamId,needsPay,amt){
   let paymentId='FREE';
   if(needsPay){
-    const t=DB.tournaments.find(x=>x.id===tId);
-    try{
-      set('reg-err','');
-      const btn=document.querySelector('#mo-body .btn-gold');
-      if(btn){btn.disabled=true;btn.textContent='⏳ OPENING PAYMENT...';}
-      paymentId = await openRazorpay({
-        amount: amt,
-        description: 'Tournament Entry: '+(t?.name||'')
-      });
-    } catch(e){
-      const btn=document.querySelector('#mo-body .btn-gold');
-      if(btn){btn.disabled=false;btn.textContent=`💳 PAY ₹${amt} & REGISTER`;}
-      if(e!=='dismissed') showToast('⚠ PAYMENT FAILED, TRY AGAIN',true);
+    const bal=walletBal(cu);
+    if(bal<amt){
+      set('reg-err','⚠ INSUFFICIENT WALLET BALANCE');
       return;
     }
+    deductWallet(amt);
+    paymentId='WALLET-'+Date.now();
   }
+
   const isPaid = paymentId && paymentId !== 'FREE';
   DB.registrations.push({id:'r'+Date.now(),tournamentId:tId,teamId,captainId:cu.id,paymentId,status:isPaid?'confirmed':'pending',at:Date.now()});
 
@@ -1225,6 +1259,21 @@ function pAddTour(el){
       <label class="fl">Tournament Name</label><input class="fi" id="tn" placeholder="e.g. ZoneX Season 3 Finals"/>
       <label class="fl">Date</label><input class="fi" id="td" placeholder="e.g. 20 June 2026"/>
       <label class="fl">Map</label><input class="fi" id="tm" placeholder="Bermuda / Kalahari / Purgatory"/>
+
+      <label class="fl">Game Mode</label>
+      <div style="display:flex;gap:8px;margin-bottom:16px">
+        <div class="role-opt sel-ply" id="tour-gm-br" onclick="pickTourGameMode('BR')" style="flex:1;padding:10px 6px;text-align:center;cursor:pointer">
+          <div style="font-size:20px;margin-bottom:3px">🎯</div>
+          <div style="font-family:var(--font-hd);font-size:9px;font-weight:700;letter-spacing:2px">BATTLE ROYALE</div>
+          <div style="font-size:9px;color:rgba(255,255,255,0.4);margin-top:2px">BR Mode</div>
+        </div>
+        <div class="role-opt" id="tour-gm-cs" onclick="pickTourGameMode('CS')" style="flex:1;padding:10px 6px;text-align:center;cursor:pointer">
+          <div style="font-size:20px;margin-bottom:3px">⚔️</div>
+          <div style="font-family:var(--font-hd);font-size:9px;font-weight:700;letter-spacing:2px">CS STYLE</div>
+          <div style="font-size:9px;color:rgba(255,255,255,0.4);margin-top:2px">Clash Squad</div>
+        </div>
+      </div>
+      <input type="hidden" id="tour-gm-val" value="BR"/>
 
       <label class="fl">Squad Format</label>
       <div style="display:flex;gap:8px;margin-bottom:16px">
@@ -1263,7 +1312,15 @@ function pAddTour(el){
     </div></div>`;
 }
 
-let _tourFormat='SQUAD';
+let _tourFormat='SQUAD', _tourGameMode='BR';
+function pickTourGameMode(gm){
+  _tourGameMode=gm;
+  if(g('tour-gm-val')) g('tour-gm-val').value=gm;
+  ['br','cs'].forEach(k=>{
+    const el=g('tour-gm-'+k);
+    if(el) el.className='role-opt'+(k===gm.toLowerCase()?' sel-ply':'');
+  });
+}
 function pickTourFormat(f){
   _tourFormat=f;
   if(g('tour-format-val')) g('tour-format-val').value=f;
@@ -1285,7 +1342,8 @@ function addTour(){
   const name=v('tn'),date=v('td');
   if(!name||!date){showToast('⚠ NAME & DATE REQUIRED',true);return;}
   const fmt=_tourFormat||'SQUAD';
-  DB.tournaments.push({id:'t'+Date.now(),name,date,map:v('tm'),prize:v('tp'),maxTeams:parseInt(v('tmx'))||12,entry:v('te'),format:fmt,qrImage:g('qr-data').value||'',desc:v('tds'),status:'open',createdAt:Date.now()});
+  const gm=_tourGameMode||'BR';
+  DB.tournaments.push({id:'t'+Date.now(),name,date,map:v('tm'),prize:v('tp'),maxTeams:parseInt(v('tmx'))||12,entry:v('te'),format:fmt,gameMode:gm,qrImage:g('qr-data').value||'',desc:v('tds'),status:'open',createdAt:Date.now()});
   DB.save();showToast('✓ TOURNAMENT CREATED',false,'ok');nav('tournaments');
 }
 
@@ -1535,11 +1593,21 @@ function renderMatchCard(m){
   }
 
   const hasBrSlots=m.brSlots&&Object.keys(m.brSlots).length>0;
-  const adminBtns=cu.role==='admin'?`<div style="padding:0 16px 12px;display:flex;gap:6px;flex-wrap:wrap">
+  const rewardLogAdmin=m.rewardLog||[];
+  const totalDistAdmin=rewardLogAdmin.reduce((s,r)=>s+r.tokens,0);
+  const adminBtns=cu.role==='admin'?`<div style="padding:0 16px 10px;display:flex;gap:6px;flex-wrap:wrap">
     <button class="btn btn-cyan btn-xs" onclick="openMatchDetails('${m.id}')">⚙ MANAGE</button>
     ${hasBrSlots?`<button class="btn btn-purple btn-xs" onclick="openSlotsPanel('${m.id}')">📋 SLOTS</button>`:''}
+    ${m.result?`<button class="btn btn-gold btn-xs" onclick="openRewardPanel('${m.id}')">🪙 REWARD</button>`:''}
     <button class="btn btn-red btn-xs" onclick="delMatch('${m.id}')">DEL</button>
-  </div>`:'';
+  </div>
+  ${m.result&&rewardLogAdmin.length?`<div style="border-top:1px solid rgba(124,77,255,0.15);padding:8px 16px 12px;background:rgba(124,77,255,0.04)">
+    <div style="font-family:var(--font-mono);font-size:8px;color:var(--purple);letter-spacing:2px;margin-bottom:6px">// TOKEN DISTRIBUTION · Total: 🪙${totalDistAdmin}</div>
+    ${rewardLogAdmin.map(r=>`<div style="display:flex;justify-content:space-between;align-items:center;padding:3px 0;border-bottom:1px solid rgba(255,255,255,0.03)">
+      <span style="font-size:11px;font-weight:600">${r.teamName}</span>
+      <span style="font-family:var(--font-mono);font-size:10px;color:var(--gold)">🪙${r.tokens} <span style="color:var(--muted);font-size:8px">${r.at?new Date(r.at).toLocaleString('en-IN',{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit',hour12:true}):''}</span></span>
+    </div>`).join('')}
+  </div>`:''}`:'';
 
   // Support both m.teams[] array AND m.team1Id/m.team2Id fields
   const t1Id=m.team1Id||(m.teams&&m.teams[0])||null;
@@ -1863,6 +1931,8 @@ function openDailyJoin(matchId){
   if(!mt){showToast('⚠ PEHLE APNI TEAM BANAO',true);return;}
   const needsPay=m.entry&&m.entry.toLowerCase()!=='free'&&m.entry.trim()!=='';
   const amt=needsPay?parseAmount(m.entry):0;
+  const bal=walletBal(cu);
+  const insufficient=needsPay&&bal<amt;
   openMo(`<button class="mo-close" onclick="closeMo()">✕</button>
     <div class="mo-title">⚡ JOIN DAILY MATCH</div>
 
@@ -1882,37 +1952,35 @@ function openDailyJoin(matchId){
     </div>
 
     ${needsPay?`
-    <div style="background:rgba(255,193,7,0.06);border:1px solid rgba(255,193,7,0.25);padding:14px;border-radius:6px;margin-bottom:14px;text-align:center">
+    <div style="background:rgba(255,193,7,0.06);border:1px solid rgba(255,193,7,0.25);padding:14px;border-radius:6px;margin-bottom:10px;text-align:center">
       <div style="font-family:var(--font-mono);font-size:9px;color:var(--gold);letter-spacing:3px;margin-bottom:8px">// ENTRY FEE</div>
-      <div style="font-family:var(--font-hd);font-size:32px;font-weight:900;color:var(--gold)">₹${amt}</div>
-      <div style="font-family:var(--font-mono);font-size:9px;color:var(--muted);margin-top:4px">UPI · Card · NetBanking · Wallet</div>
-    </div>`:''}
+      <div style="font-family:var(--font-hd);font-size:32px;font-weight:900;color:var(--gold)">🪙${amt}</div>
+      <div style="font-family:var(--font-mono);font-size:9px;color:var(--muted);margin-top:4px">Wallet Balance: 🪙${bal}</div>
+    </div>
+    ${insufficient?`<div style="background:rgba(244,67,54,0.06);border:1px solid rgba(244,67,54,0.25);padding:10px 12px;border-radius:6px;margin-bottom:14px;text-align:center">
+      <div style="font-family:var(--font-mono);font-size:10px;color:var(--red);letter-spacing:1px">⚠ INSUFFICIENT WALLET BALANCE</div>
+      <button class="btn btn-cyan btn-sm" style="margin-top:8px" onclick="closeMo();nav('wallet')">➕ ADD MONEY TO WALLET</button>
+    </div>`:''}`:''}
 
     <div style="background:rgba(0,180,255,0.05);border:1px solid rgba(0,180,255,0.15);padding:10px 12px;border-radius:4px;margin-bottom:12px;font-family:var(--font-mono);font-size:10px;color:var(--muted);line-height:1.7">
-      ${needsPay?'💳 Payment hone ke baad join request admin ko jayegi.<br>':''}⚠ Admin approve karega · Room ID tab milega.
+      ${needsPay?'🪙 Tokens wallet se deduct honge, slot auto-confirm hoga.<br>':''}⚠ Admin approve karega · Room ID tab milega.
     </div>
     <div class="err-msg" id="djoin-err"></div>
-    <button class="btn btn-green btn-full" id="djoin-btn" onclick="submitDailyJoin('${matchId}','${mt.id}',${needsPay},${amt})">${needsPay?`💳 PAY ₹${amt} & JOIN`:'📩 SEND JOIN REQUEST'}</button>`);
+    <button class="btn btn-green btn-full" id="djoin-btn" ${insufficient?'disabled':''} onclick="submitDailyJoin('${matchId}','${mt.id}',${needsPay},${amt})">${needsPay?`🪙 PAY ${amt} TOKENS & JOIN`:'📩 SEND JOIN REQUEST'}</button>`);
 }
 
 async function submitDailyJoin(matchId,teamId,needsPay,amt){
   let paymentId='FREE';
   if(needsPay){
-    const m=DB.matches.find(x=>x.id===matchId);
-    try{
-      const btn=g('djoin-btn');
-      if(btn){btn.disabled=true;btn.textContent='⏳ OPENING PAYMENT...';}
-      paymentId = await openRazorpay({
-        amount: amt,
-        description: 'Daily Match Entry: '+(m?.label||m?.date||'')
-      });
-    } catch(e){
-      const btn=g('djoin-btn');
-      if(btn){btn.disabled=false;btn.textContent=`💳 PAY ₹${amt} & JOIN`;}
-      if(e!=='dismissed') showToast('⚠ PAYMENT FAILED, TRY AGAIN',true);
+    const bal=walletBal(cu);
+    if(bal<amt){
+      set('djoin-err','⚠ INSUFFICIENT WALLET BALANCE');
       return;
     }
+    deductWallet(amt);
+    paymentId='WALLET-'+Date.now();
   }
+
   const m=DB.matches.find(x=>x.id===matchId);
   const mt=DB.teams.find(x=>x.id===teamId);
 
@@ -1983,9 +2051,9 @@ function openMatchDetails(matchId){
         return`<div style="background:rgba(255,255,255,0.02);border:1px solid rgba(255,255,255,0.06);padding:10px 12px;border-radius:4px;margin-bottom:6px">
           <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:6px">
             <div>
-              <div style="font-size:13px;font-weight:700">${team?.name||'Unknown'} <span style="font-size:9px;color:var(--purple)">${team?.tag||''}</span></div>
+              <div style="font-size:13px;font-weight:700">${team?.name||'Unknown'} <span style="font-size:9px;color:var(--purple)">${team?.tag||''}</span>${r.slotNo?` <span style="font-family:var(--font-mono);font-size:10px;color:var(--cyan);font-weight:900">· SLOT #${r.slotNo}</span>`:''}</div>
               <div style="font-family:var(--font-mono);font-size:9px;color:var(--muted);margin-top:2px">Cap: ${cap?.name||'—'} · 📱 ${cap?.phone||'—'}</div>
-              ${r.paymentId&&r.paymentId!=='FREE'?`<div style="font-family:var(--font-mono);font-size:9px;color:var(--green);margin-top:2px">💳 Payment ID: ${r.paymentId}</div>`:r.utr?`<div style="font-family:var(--font-mono);font-size:9px;color:var(--green);margin-top:2px">💰 UTR: ${r.utr}</div>`:r.paymentId==='FREE'?`<div style="font-family:var(--font-mono);font-size:9px;color:var(--cyan);margin-top:2px">✓ Free Entry</div>`:`<div style="font-family:var(--font-mono);font-size:9px;color:var(--muted);margin-top:2px">No payment</div>`}
+              ${r.paymentId&&r.paymentId!=='FREE'?`<div style="font-family:var(--font-mono);font-size:9px;color:var(--green);margin-top:2px">${r.paymentId.startsWith('WALLET-')?'🪙 Paid via Wallet':'💳 Payment ID: '+r.paymentId}</div>`:r.utr?`<div style="font-family:var(--font-mono);font-size:9px;color:var(--green);margin-top:2px">💰 UTR: ${r.utr}</div>`:r.paymentId==='FREE'?`<div style="font-family:var(--font-mono);font-size:9px;color:var(--cyan);margin-top:2px">✓ Free Entry</div>`:`<div style="font-family:var(--font-mono);font-size:9px;color:var(--muted);margin-top:2px">No payment</div>`}
             </div>
             <div style="display:flex;flex-direction:column;align-items:flex-end;gap:5px">
               <span class="badge ${r.status==='approved'?'b-open':r.status==='rejected'?'b-closed':'b-ongoing'}">${r.status.toUpperCase()}</span>
@@ -2085,7 +2153,7 @@ function openSlotsPanel(matchId){
         <span style="font-family:var(--font-hd);font-size:18px;font-weight:900;color:var(--cyan);min-width:36px">#${i}</span>
         <div>
           <div style="font-weight:700;font-size:13px">${team.name} <span style="font-size:10px;color:var(--purple)">${team.tag}</span></div>
-          <div style="font-family:var(--font-mono);font-size:9px;color:var(--muted)">${members.length} players</div>
+          <div style="font-family:var(--font-mono);font-size:9px;color:var(--muted)">${members.length} players (incl. captain)</div>
         </div>
       </div>
       <div style="padding:6px 12px 8px">
@@ -2209,6 +2277,151 @@ function confirmAddTeamsToMatch(matchId){
 function setRes(id){setMatchResult(id);}
 function delMatch(id){if(!confirm('Delete?'))return;DB._d.matches=DB.matches.filter(x=>x.id!==id);DB.save();pMatches(g('mc'));}
 
+// ══ ADMIN: REWARD TOKEN PANEL ══
+function openRewardPanel(matchId){
+  const m=DB.matches.find(x=>x.id===matchId);if(!m)return;
+  const isDaily=m.matchType==='daily'||m.matchType==='DAILY';
+  const isCS=m.gameMode==='CS'||m.matchType==='CS';
+
+  // Get participating teams
+  let teams=[];
+  if(isDaily){
+    const approvedReqs=DB.requests.filter(r=>r.type==='daily_join'&&r.matchId===m.id&&r.status==='approved');
+    teams=approvedReqs.map(r=>DB.teams.find(t=>t.id===r.teamId)).filter(Boolean);
+    if(!teams.length) teams=(m.brTeamIds||[]).map(id=>DB.teams.find(t=>t.id===id)).filter(Boolean);
+  } else if(isCS){
+    teams=[DB.teams.find(t=>t.id===m.team1Id),DB.teams.find(t=>t.id===m.team2Id)].filter(Boolean);
+  } else {
+    teams=(m.brTeamIds||m.teams||[]).map(id=>DB.teams.find(t=>t.id===id)).filter(Boolean);
+    if(!teams.length) teams=[DB.teams.find(t=>t.id===m.team1Id),DB.teams.find(t=>t.id===m.team2Id)].filter(Boolean);
+  }
+  if(!teams.length){showToast('⚠ KOI TEAM NAHI MILI IS MATCH MEIN',true);return;}
+
+  // Sort by BR score if available
+  if(m.brScores&&m.brScores.length){
+    teams.sort((a,b)=>{
+      const sa=m.brScores.find(s=>s.teamId===a.id);
+      const sb=m.brScores.find(s=>s.teamId===b.id);
+      return (sb?.total||0)-(sa?.total||0);
+    });
+  } else if(isCS&&m.result){
+    // CS: winner first
+    teams.sort((a,b)=>((b.name===m.result?1:0)-(a.name===m.result?1:0)));
+  }
+
+  const rewardLog=m.rewardLog||[];
+  const totalDistributed=rewardLog.reduce((s,r)=>s+r.tokens,0);
+
+  const teamRows=teams.map((t,i)=>{
+    if(!t)return '';
+    const score=m.brScores?m.brScores.find(s=>s.teamId===t.id):null;
+    const cap=DB.users.find(u=>u.id===t.captainId);
+    const alreadyRewarded=rewardLog.find(r=>r.teamId===t.id);
+    const rankLabel=isCS?(t.name===m.result?'🏆 Winner':'🥈 Runner'):i===0?'🥇':i===1?'🥈':i===2?'🥉':`#${i+1}`;
+    return `<div style="background:${alreadyRewarded?'rgba(0,230,118,0.04)':'rgba(255,255,255,0.02)'};border:1px solid ${alreadyRewarded?'rgba(0,230,118,0.2)':'rgba(255,255,255,0.06)'};padding:10px 13px;border-radius:6px;margin-bottom:8px">
+      <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px">
+        <div style="display:flex;align-items:center;gap:10px">
+          <span style="font-size:16px">${rankLabel}</span>
+          <div>
+            <div style="font-size:13px;font-weight:700">${t.name} <span style="font-size:9px;color:var(--purple)">[${t.tag}]</span></div>
+            <div style="font-family:var(--font-mono);font-size:9px;color:var(--muted);margin-top:2px">Cap: ${cap?.name||'—'} · 💰 Bal: 🪙${cap?.walletBalance||0}${score?` · Kills:${score.kills} Pts:${score.placePts} Total:${score.total}`:''}</div>
+            ${alreadyRewarded?`<div style="font-family:var(--font-mono);font-size:9px;color:var(--green);margin-top:2px">✓ 🪙${alreadyRewarded.tokens} — ${new Date(alreadyRewarded.at).toLocaleString('en-IN',{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit',hour12:true})}</div>`:''}
+          </div>
+        </div>
+        <div style="display:flex;align-items:center;gap:7px">
+          <input class="fi" type="number" id="rp-tok-${t.id}" value="${alreadyRewarded?alreadyRewarded.tokens:0}" min="0" style="width:80px;padding:7px 10px;font-size:13px;margin-bottom:0;text-align:center"/>
+          <button class="btn btn-${alreadyRewarded?'ghost':'gold'} btn-xs" onclick="distributeSingleReward('${matchId}','${t.id}')">${alreadyRewarded?'🔄 UPDATE':'🪙 GIVE'}</button>
+        </div>
+      </div>
+    </div>`;
+  }).join('');
+
+  openMo(`<button class="mo-close" onclick="closeMo()">✕</button>
+    <div class="mo-title">🪙 REWARD TOKENS</div>
+    <div style="background:rgba(124,77,255,0.06);border:1px solid rgba(124,77,255,0.2);padding:10px 14px;border-radius:5px;margin-bottom:14px">
+      <div style="font-family:var(--font-mono);font-size:10px;color:var(--muted)">Match: <span style="color:#fff">${m.label||m.round||'Match'}</span> · ${m.date||'TBD'} · <span style="color:var(--gold)">🏆 ${m.result}</span></div>
+      <div style="font-family:var(--font-mono);font-size:10px;color:var(--muted);margin-top:3px">Total Distributed: <span style="color:var(--cyan)">🪙${totalDistributed}</span></div>
+    </div>
+    <div style="font-family:var(--font-mono);font-size:9px;color:var(--purple);letter-spacing:2px;margin-bottom:10px">// HAR TEAM KO TOKENS SET KARO</div>
+    ${teamRows}
+    <div style="border-top:1px solid rgba(255,255,255,0.06);padding-top:12px;margin-top:4px;display:flex;gap:8px;flex-wrap:wrap">
+      <button class="btn btn-purple btn-sm" style="flex:1" onclick="distributeAllRewards('${matchId}')">⚡ DISTRIBUTE ALL</button>
+      <button class="btn btn-ghost btn-sm" onclick="closeMo()">CLOSE</button>
+    </div>`);
+}
+
+function distributeSingleReward(matchId, teamId){
+  const m=DB.matches.find(x=>x.id===matchId);if(!m)return;
+  const team=DB.teams.find(t=>t.id===teamId);if(!team)return;
+  const tokens=parseInt(g('rp-tok-'+teamId)?.value)||0;
+  if(tokens<0){showToast('⚠ VALID TOKENS DAALO',true);return;}
+  if(!m.rewardLog)m.rewardLog=[];
+  const cap=DB.users.find(u=>u.id===team.captainId);
+  const existing=m.rewardLog.find(r=>r.teamId===teamId);
+  if(existing){
+    if(cap)cap.walletBalance=Math.max(0,(cap.walletBalance||0)-existing.tokens+tokens);
+    existing.tokens=tokens;existing.at=Date.now();
+  } else {
+    if(cap)cap.walletBalance=(cap.walletBalance||0)+tokens;
+    m.rewardLog.push({teamId,teamName:team.name,tokens,at:Date.now()});
+  }
+  if(tokens>0){
+    const affected=[team.captainId,...(team.members||[])];
+    affected.forEach(uid=>{
+      DB.requests.push({id:'notif'+Date.now()+Math.random(),type:'match_result',toUserId:uid,fromUserId:'admin1',status:'unread',at:Date.now(),
+        title:'🪙 Match Reward Credited!',
+        body:`${m.label||m.round||'Match'} ke liye 🪙${tokens} tokens aapki wallet mein add ho gaye!`});
+    });
+  }
+  DB.save();updateNotifBadge();buildSidebar();
+  showToast('✓ 🪙'+tokens+' → '+team.name,false,'ok');
+  openRewardPanel(matchId);
+}
+
+function distributeAllRewards(matchId){
+  const m=DB.matches.find(x=>x.id===matchId);if(!m)return;
+  const isDaily=m.matchType==='daily'||m.matchType==='DAILY';
+  const isCS=m.gameMode==='CS'||m.matchType==='CS';
+  let teams=[];
+  if(isDaily){
+    const approvedReqs=DB.requests.filter(r=>r.type==='daily_join'&&r.matchId===m.id&&r.status==='approved');
+    teams=approvedReqs.map(r=>DB.teams.find(t=>t.id===r.teamId)).filter(Boolean);
+    if(!teams.length)teams=(m.brTeamIds||[]).map(id=>DB.teams.find(t=>t.id===id)).filter(Boolean);
+  } else if(isCS){
+    teams=[DB.teams.find(t=>t.id===m.team1Id),DB.teams.find(t=>t.id===m.team2Id)].filter(Boolean);
+  } else {
+    teams=(m.brTeamIds||m.teams||[]).map(id=>DB.teams.find(t=>t.id===id)).filter(Boolean);
+    if(!teams.length)teams=[DB.teams.find(t=>t.id===m.team1Id),DB.teams.find(t=>t.id===m.team2Id)].filter(Boolean);
+  }
+  if(!m.rewardLog)m.rewardLog=[];
+  let totalGiven=0;
+  teams.forEach(team=>{
+    if(!team)return;
+    const tokens=parseInt(g('rp-tok-'+team.id)?.value)||0;
+    if(tokens<=0)return;
+    const cap=DB.users.find(u=>u.id===team.captainId);
+    const existing=m.rewardLog.find(r=>r.teamId===team.id);
+    if(existing){
+      if(cap)cap.walletBalance=Math.max(0,(cap.walletBalance||0)-existing.tokens+tokens);
+      existing.tokens=tokens;existing.at=Date.now();
+    } else {
+      if(cap)cap.walletBalance=(cap.walletBalance||0)+tokens;
+      m.rewardLog.push({teamId:team.id,teamName:team.name,tokens,at:Date.now()});
+    }
+    const affected=[team.captainId,...(team.members||[])];
+    affected.forEach(uid=>{
+      DB.requests.push({id:'notif'+Date.now()+Math.random(),type:'match_result',toUserId:uid,fromUserId:'admin1',status:'unread',at:Date.now(),
+        title:'🪙 Match Reward Credited!',
+        body:`${m.label||m.round||'Match'} ke liye 🪙${tokens} tokens aapki wallet mein add ho gaye!`});
+    });
+    totalGiven+=tokens;
+  });
+  DB.save();updateNotifBadge();buildSidebar();
+  closeMo();
+  showToast('✓ 🪙'+totalGiven+' TOKENS DISTRIBUTED!',false,'ok');
+  pSchedule(g('mc'));
+}
+
 // ── ADMIN: Daily Join Requests in Notifications ──
 function getDailyJoinRequests(){
   return DB.requests.filter(r=>r.type==='daily_join'&&r.status==='pending');
@@ -2221,23 +2434,27 @@ function pTeams(el){
   const mc=g('mc');
   DB.teams.forEach(team=>{
     const cap=DB.users.find(u=>u.id===team.captainId);
-    const members=team.members.map(id=>DB.users.find(u=>u.id===id)).filter(Boolean);
+    const memberUsers=team.members.map(id=>DB.users.find(u=>u.id===id)).filter(Boolean);
+    const allMembers=cap?[cap,...memberUsers]:memberUsers; // captain + players
     mc.innerHTML+=`<div class="xcard">
       <div class="team-hero">
         <div class="team-badge">${team.name[0]}</div>
         <div style="flex:1"><div class="team-name-big">${team.name}</div><div class="team-tag-sm">${team.tag}</div>
         <div style="font-family:var(--font-mono);font-size:9px;color:var(--muted);margin-top:3px">CAPTAIN: ${cap?.name||'—'} (${cap?.ign||'—'})</div></div>
         <div style="text-align:right">
-          <div style="font-family:var(--font-hd);font-size:24px;color:var(--purple)">${members.length}<span style="font-size:11px;color:var(--muted)">/6</span></div>
+          <div style="font-family:var(--font-hd);font-size:24px;color:var(--purple)">${allMembers.length}<span style="font-size:11px;color:var(--muted)">/6</span></div>
           <button class="btn btn-red btn-xs" style="margin-top:6px" onclick="deleteTeam('${team.id}')">🗑 DELETE TEAM</button>
         </div>
       </div>
-      ${members.map(m=>`<div class="prow"><div class="prow-l">
-        <div class="av av-c">${m.name[0]}</div>
-        <div><div class="prow-name">${m.name}</div><div class="prow-uid">IGN: ${m.ign} · UID: ${m.uid}</div></div>
-      </div>
-      <button class="btn btn-red btn-xs" onclick="admRm('${team.id}','${m.id}')">REMOVE</button>
-      </div>`).join('')||`<div style="color:var(--muted);font-family:var(--font-mono);font-size:10px;padding:8px">// Empty team</div>`}
+      ${allMembers.map(m=>{
+        const isCap=m.id===team.captainId;
+        return `<div class="prow"><div class="prow-l">
+          <div class="av ${isCap?'av-g':'av-c'}">${m.name[0]}</div>
+          <div><div class="prow-name">${m.name} ${isCap?'<span style="font-family:var(--font-mono);font-size:8px;color:var(--gold)">👑 CAPTAIN</span>':''}</div><div class="prow-uid">IGN: ${m.ign} · UID: ${m.uid}</div></div>
+        </div>
+        ${!isCap?`<button class="btn btn-red btn-xs" onclick="admRm('${team.id}','${m.id}')">REMOVE</button>`:''}
+        </div>`;
+      }).join('')||`<div style="color:var(--muted);font-family:var(--font-mono);font-size:10px;padding:8px">// No members yet</div>`}
     </div>`;
   });
 }
@@ -2394,7 +2611,7 @@ function pNotifications(el){
             <div class="req-from">📅 ${m?.label||m?.date||'Match'}</div>
             <div class="req-meta">Team: ${team?.name||'—'} (${team?.tag||'—'})</div>
             <div class="req-meta">Captain: ${cap?.name||'—'} · 📱 ${cap?.phone||'—'}</div>
-            ${r.paymentId&&r.paymentId!=='FREE'?`<div class="req-meta" style="color:var(--green)">💳 Payment ID: ${r.paymentId}</div>`:r.utr?`<div class="req-meta" style="color:var(--green)">💰 UTR: ${r.utr}</div>`:r.paymentId==='FREE'?`<div class="req-meta" style="color:var(--cyan)">✓ Free Entry</div>`:`<div class="req-meta">No payment</div>`}
+            ${r.paymentId&&r.paymentId!=='FREE'?`<div class="req-meta" style="color:var(--green)">${r.paymentId.startsWith('WALLET-')?'🪙 Paid via Wallet':'💳 Payment ID: '+r.paymentId}</div>`:r.utr?`<div class="req-meta" style="color:var(--green)">💰 UTR: ${r.utr}</div>`:r.paymentId==='FREE'?`<div class="req-meta" style="color:var(--cyan)">✓ Free Entry</div>`:`<div class="req-meta">No payment</div>`}
           </div>
           <div class="prow-acts">
             <button class="btn btn-green btn-xs" onclick="approveDailyJoin('${r.id}','${r.matchId}');pNotifications(g('mc'))">✓ APPROVE</button>
@@ -2414,10 +2631,11 @@ function pNotifications(el){
         const team=DB.teams.find(x=>x.id===r.teamId);
         const pid=r.paymentId||r.utr||'—';
         const isFree=pid==='FREE';
+        const isWallet=typeof pid==='string'&&pid.startsWith('WALLET-');
         html+=`<div class="prow"><div class="prow-l"><div class="av av-g">₹</div><div>
           <div class="prow-name">${team?.name||'Unknown Team'}</div>
           <div class="prow-uid">Tournament: ${t?.name||'—'}</div>
-          <div class="prow-uid" style="color:${isFree?'var(--cyan)':'var(--green)'}">💳 ${isFree?'FREE ENTRY':'Payment ID: '+pid}</div>
+          <div class="prow-uid" style="color:${isFree?'var(--cyan)':'var(--green)'}">${isFree?'💳 FREE ENTRY':isWallet?'🪙 Paid via Wallet':'💳 Payment ID: '+pid}</div>
         </div></div><span class="badge b-open">${isFree?'FREE':'PAID'}</span></div>`;
       });
       html+=`</div>`;
@@ -2647,6 +2865,271 @@ function doExchange(oldId,newId){
 function rmPl(pid){const t=DB.teams.find(x=>x.captainId===cu.id),p=DB.users.find(x=>x.id===pid);if(!t||!p)return;if(pid===cu.id){showToast('⚠ CANNOT REMOVE CAPTAIN',true);return;}t.members=t.members.filter(i=>i!==pid);p.teamId=null;DB.save();showToast('REMOVED');nav('my-team');}
 
 // ── PROFILE ──
+// ══════════════════════════════════════════════
+// WALLET / TOKEN SYSTEM (Captain only)
+// ══════════════════════════════════════════════
+function pWalletPage(el){
+  if(cu.role==='admin') return pWalletAdmin(el);
+  if(cu.role!=='captain'){
+    el.innerHTML=`<div class="xcard" style="text-align:center;padding:40px 20px">
+      <div style="font-size:36px;margin-bottom:10px">🔒</div>
+      <div style="font-family:var(--font-mono);font-size:11px;color:var(--muted);letter-spacing:2px">WALLET ACCESS: CAPTAINS ONLY</div>
+    </div>`;
+    return;
+  }
+  pWallet(el);
+}
+
+function pWallet(el){
+  const bal=walletBal(cu);
+  const addReqs=DB.walletRequests.filter(r=>r.captainId===cu.id).map(r=>({...r,kind:'add'}));
+  const wdReqs=DB.withdrawRequests.filter(r=>r.captainId===cu.id).map(r=>({...r,kind:'withdraw'}));
+  const history=[...addReqs,...wdReqs].sort((a,b)=>b.at-a.at);
+
+  el.innerHTML=`<div style="animation:pageIn .35s ease">
+    <div class="sec-hd"><div class="sec-title"><div class="sec-bar"></div>WALLET</div></div>
+
+    <div class="xcard" style="text-align:center;padding:28px 18px">
+      <div style="font-family:var(--font-mono);font-size:9px;color:var(--muted);letter-spacing:3px;margin-bottom:8px">// TOKEN BALANCE</div>
+      <div style="font-family:var(--font-hd);font-size:42px;font-weight:900;color:var(--gold)">🪙 ${bal}</div>
+      <div style="display:flex;gap:10px;margin-top:18px">
+        <button class="btn btn-green btn-full" onclick="openAddMoney()">➕ ADD MONEY</button>
+        <button class="btn btn-cyan btn-full" onclick="openWithdraw()">➖ WITHDRAW</button>
+      </div>
+    </div>
+
+    <div class="xcard">
+      <div class="xcard-t">📜 Transaction History</div>
+      ${!history.length?`<div style="text-align:center;padding:20px;color:var(--muted);font-family:var(--font-mono);font-size:10px;letter-spacing:2px">// NO TRANSACTIONS YET</div>`:
+       history.map(walletHistoryRow).join('')}
+    </div>
+  </div>`;
+}
+
+function walletHistoryRow(r){
+  const isAdd=r.kind==='add';
+  const badgeClass=r.status==='approved'?'b-open':r.status==='rejected'?'b-closed':'b-ongoing';
+  return `<div class="prow">
+    <div class="prow-l"><div class="av ${isAdd?'av-c':'av-p'}">${isAdd?'+':'-'}</div>
+      <div>
+        <div class="prow-name">${isAdd?'➕ Add Money':'➖ Withdraw'} — 🪙${r.amount}</div>
+        <div class="prow-uid">${isAdd?'UTR: '+(r.utr||'—'):'UPI: '+(r.upiId||'—')}</div>
+        <div class="prow-uid">${new Date(r.at).toLocaleString()}</div>
+      </div>
+    </div>
+    <span class="badge ${badgeClass}">${r.status.toUpperCase()}</span>
+  </div>`;
+}
+
+// ── Captain: Add Money ──
+function openAddMoney(){
+  const qr=DB._d.settings?.walletQr||'';
+  openMo(`<button class="mo-close" onclick="closeMo()">✕</button>
+    <div class="mo-title">➕ ADD MONEY TO WALLET</div>
+    <label class="fl">Amount</label>
+    <input class="fi" type="number" id="am-amount" placeholder="e.g. 100"/>
+    <label class="fl">📱 Scan & Pay</label>
+    <div style="text-align:center;margin-bottom:14px">
+      ${qr?`<img src="${qr}" style="width:160px;height:160px;object-fit:contain;border:1px solid rgba(255,215,0,0.3);border-radius:6px"/>`
+        :`<div style="background:rgba(255,193,7,0.05);border:1px dashed rgba(255,193,7,0.3);padding:20px;border-radius:6px;font-family:var(--font-mono);font-size:10px;color:var(--muted)">⚠ QR not set by admin yet. Contact admin via Chat.</div>`}
+    </div>
+    <label class="fl">UTR / Transaction ID</label>
+    <input class="fi" id="am-utr" placeholder="12-digit UTR number"/>
+    <div class="err-msg" id="am-err"></div>
+    <button class="btn btn-green btn-full" onclick="submitAddMoney()">📩 SUBMIT REQUEST</button>`);
+}
+
+function submitAddMoney(){
+  const amt=parseInt(v('am-amount'))||0;
+  const utr=v('am-utr');
+  if(amt<=0){set('am-err','⚠ ENTER VALID AMOUNT');return;}
+  if(!utr){set('am-err','⚠ UTR REQUIRED');return;}
+  const mt=DB.teams.find(t=>t.captainId===cu.id);
+  DB.walletRequests.push({id:'wr'+Date.now(),captainId:cu.id,captainName:cu.name,teamName:mt?.name||'—',amount:amt,utr,status:'pending',at:Date.now()});
+  DB.requests.push({id:'notif'+Date.now(),type:'match_result',toUserId:'admin1',fromUserId:cu.id,status:'unread',at:Date.now(),
+    title:'💰 New Wallet Add Money Request',
+    body:`${cu.name} (${mt?.name||'—'}) ne 🪙${amt} add karne ki request bheji hai. UTR: ${utr}`});
+  DB.save();closeMo();showToast('📩 REQUEST SENT! ADMIN APPROVE KAREGA',false,'ok');
+  nav('wallet');
+}
+
+// ── Captain: Withdraw ──
+function openWithdraw(){
+  const bal=walletBal(cu);
+  openMo(`<button class="mo-close" onclick="closeMo()">✕</button>
+    <div class="mo-title">➖ WITHDRAW TOKENS</div>
+    <div style="font-family:var(--font-mono);font-size:10px;color:var(--muted);margin-bottom:12px">Balance: 🪙${bal}</div>
+    <label class="fl">Amount</label>
+    <input class="fi" type="number" id="wd-amount" placeholder="e.g. 100"/>
+    <label class="fl">UPI ID</label>
+    <input class="fi" id="wd-upi" placeholder="yourname@upi"/>
+    <label class="fl">WhatsApp Number</label>
+    <input class="fi" id="wd-wa" value="${cu.whatsapp||cu.phone||''}" placeholder="10-digit WhatsApp number"/>
+    <div class="err-msg" id="wd-err"></div>
+    <button class="btn btn-cyan btn-full" onclick="submitWithdraw()">📩 SEND WITHDRAW REQUEST</button>`);
+}
+
+function submitWithdraw(){
+  const amt=parseInt(v('wd-amount'))||0;
+  const upi=v('wd-upi');
+  const wa=v('wd-wa').replace(/\D/g,'');
+  const bal=walletBal(cu);
+  if(amt<=0){set('wd-err','⚠ ENTER VALID AMOUNT');return;}
+  if(amt>bal){set('wd-err','⚠ AMOUNT EXCEEDS WALLET BALANCE');return;}
+  if(!upi){set('wd-err','⚠ UPI ID REQUIRED');return;}
+  if(wa.length<10){set('wd-err','⚠ VALID WHATSAPP NUMBER REQUIRED');return;}
+  const mt=DB.teams.find(t=>t.captainId===cu.id);
+  deductWallet(amt); // hold amount until admin acts
+  DB.withdrawRequests.push({id:'wd'+Date.now(),captainId:cu.id,captainName:cu.name,teamName:mt?.name||'—',amount:amt,upiId:upi,whatsapp:wa,status:'pending',at:Date.now()});
+  DB.requests.push({id:'notif'+Date.now(),type:'match_result',toUserId:'admin1',fromUserId:cu.id,status:'unread',at:Date.now(),
+    title:'💸 New Withdraw Request',
+    body:`${cu.name} (${mt?.name||'—'}) ne 🪙${amt} withdraw karne ki request bheji hai. UPI: ${upi} · WhatsApp: ${wa}`});
+  DB.save();closeMo();showToast('📩 WITHDRAW REQUEST SENT!',false,'ok');
+  nav('wallet');
+}
+
+// ══ ADMIN: Wallet Requests Management ══
+function pWalletAdmin(el){
+  const qr=DB._d.settings?.walletQr||'';
+  const addReqs=[...DB.walletRequests].sort((a,b)=>b.at-a.at);
+  const wdReqs=[...DB.withdrawRequests].sort((a,b)=>b.at-a.at);
+  const pendingAdd=addReqs.filter(r=>r.status==='pending');
+  const pendingWd=wdReqs.filter(r=>r.status==='pending');
+  const history=[...addReqs.filter(r=>r.status!=='pending').map(r=>({...r,kind:'add'})),...wdReqs.filter(r=>r.status!=='pending').map(r=>({...r,kind:'withdraw'}))].sort((a,b)=>b.at-a.at).slice(0,20);
+
+  el.innerHTML=`<div style="animation:pageIn .35s ease">
+    <div class="sec-hd"><div class="sec-title"><div class="sec-bar"></div>WALLET REQUESTS</div></div>
+
+    <div class="xcard">
+      <div class="xcard-t">📱 Wallet Recharge QR Code</div>
+      <div id="wallet-qr-wrap" style="margin-bottom:8px">
+        ${qr?`<img src="${qr}" style="width:140px;height:140px;object-fit:contain;border:1px solid rgba(255,215,0,0.3);cursor:pointer" onclick="g('wallet-qr-file').click()"/>`
+          :`<div style="background:rgba(255,215,0,0.03);border:2px dashed rgba(255,215,0,0.2);width:140px;height:140px;display:flex;align-items:center;justify-content:center;font-family:var(--font-mono);font-size:9px;color:var(--muted);letter-spacing:1px;cursor:pointer;flex-direction:column;gap:6px" onclick="g('wallet-qr-file').click()"><span style="font-size:24px">📱</span>UPLOAD QR</div>`}
+      </div>
+      <input type="file" id="wallet-qr-file" accept="image/*" style="display:none" onchange="uploadWalletQR(event)"/>
+      <div style="font-family:var(--font-mono);font-size:9px;color:var(--muted)">Captains ko ye QR "Add Money" modal mein dikhega.</div>
+    </div>
+
+    <div class="xcard">
+      <div class="xcard-t">⏳ Pending Add Money Requests (${pendingAdd.length})</div>
+      ${!pendingAdd.length?`<div style="text-align:center;padding:14px;color:var(--muted);font-family:var(--font-mono);font-size:10px;letter-spacing:2px">// NONE PENDING</div>`:
+       pendingAdd.map(r=>`<div class="prow">
+        <div class="prow-l"><div class="av av-c">${(r.captainName||'?')[0]}</div>
+          <div><div class="prow-name">${r.captainName} <span style="color:var(--purple);font-size:10px">[${r.teamName}]</span></div>
+          <div class="prow-uid">🪙 ${r.amount} · UTR: ${r.utr}</div>
+          <div class="prow-uid">${new Date(r.at).toLocaleString()}</div></div>
+        </div>
+        <div class="prow-acts">
+          <button class="btn btn-green btn-xs" onclick="approveWalletReq('${r.id}')">✓ APPROVE</button>
+          <button class="btn btn-red btn-xs" onclick="rejectWalletReq('${r.id}')">✗ REJECT</button>
+        </div>
+       </div>`).join('')}
+    </div>
+
+    <div class="xcard">
+      <div class="xcard-t">⏳ Pending Withdraw Requests (${pendingWd.length})</div>
+      ${!pendingWd.length?`<div style="text-align:center;padding:14px;color:var(--muted);font-family:var(--font-mono);font-size:10px;letter-spacing:2px">// NONE PENDING</div>`:
+       pendingWd.map(r=>`<div class="prow">
+        <div class="prow-l"><div class="av av-p">${(r.captainName||'?')[0]}</div>
+          <div><div class="prow-name">${r.captainName} <span style="color:var(--purple);font-size:10px">[${r.teamName}]</span></div>
+          <div class="prow-uid">🪙 ${r.amount} · UPI: ${r.upiId}</div>
+          <div class="prow-uid">📱 WhatsApp: ${r.whatsapp}</div>
+          <div class="prow-uid">${new Date(r.at).toLocaleString()}</div></div>
+        </div>
+        <div class="prow-acts">
+          <button class="btn btn-green btn-xs" onclick="approveWithdrawReq('${r.id}')">✓ PAID</button>
+          <button class="btn btn-red btn-xs" onclick="rejectWithdrawReq('${r.id}')">✗ REJECT</button>
+        </div>
+       </div>`).join('')}
+    </div>
+
+    <div class="xcard">
+      <div class="xcard-t" style="display:flex;justify-content:space-between;align-items:center">
+        📜 Recent History
+        <button class="btn btn-red btn-xs" onclick="clearPaymentHistory()">🗑 CLEAR ALL HISTORY</button>
+      </div>
+      ${!history.length?`<div style="text-align:center;padding:14px;color:var(--muted);font-family:var(--font-mono);font-size:10px;letter-spacing:2px">// NO HISTORY</div>`:
+       history.map(r=>{
+        const isAdd=r.kind==='add';
+        const badgeClass=r.status==='approved'?'b-open':'b-closed';
+        return `<div class="prow">
+          <div class="prow-l"><div class="av ${isAdd?'av-c':'av-p'}">${isAdd?'+':'-'}</div>
+            <div><div class="prow-name">${r.captainName} — 🪙${r.amount}</div>
+            <div class="prow-uid">${isAdd?'Add Money':'Withdraw'} · ${new Date(r.at).toLocaleString()}</div></div>
+          </div>
+          <span class="badge ${badgeClass}">${r.status.toUpperCase()}</span>
+        </div>`;
+       }).join('')}
+    </div>
+  </div>`;
+}
+
+function uploadWalletQR(e){
+  const f=e.target.files[0];if(!f)return;
+  const reader=new FileReader();
+  reader.onload=function(ev){
+    if(!DB._d.settings) DB._d.settings={};
+    DB._d.settings.walletQr=ev.target.result;
+    DB.save();
+    pWalletAdmin(g('mc'));
+    showToast('✓ QR UPDATED',false,'ok');
+  };
+  reader.readAsDataURL(f);
+}
+
+function approveWalletReq(id){
+  const r=DB.walletRequests.find(x=>x.id===id);if(!r||r.status!=='pending')return;
+  const u=DB.users.find(x=>x.id===r.captainId);if(!u)return;
+  u.walletBalance=(u.walletBalance||0)+r.amount;
+  r.status='approved';
+  DB.requests.push({id:'notif'+Date.now(),type:'match_result',toUserId:r.captainId,fromUserId:'admin1',status:'unread',at:Date.now(),
+    title:'✅ Wallet Recharge Approved!',
+    body:`🪙${r.amount} tumhare wallet mein add ho gaye. New balance: 🪙${u.walletBalance}`});
+  DB.save();showToast('✓ APPROVED & TOKENS ADDED',false,'ok');pWalletAdmin(g('mc'));
+}
+
+function rejectWalletReq(id){
+  const r=DB.walletRequests.find(x=>x.id===id);if(!r||r.status!=='pending')return;
+  if(!confirm('Reject this add money request?'))return;
+  r.status='rejected';
+  DB.requests.push({id:'notif'+Date.now(),type:'match_result',toUserId:r.captainId,fromUserId:'admin1',status:'unread',at:Date.now(),
+    title:'❌ Wallet Recharge Rejected',
+    body:`Tumhari 🪙${r.amount} add money request reject ho gayi. UTR check karke admin se contact karo.`});
+  DB.save();showToast('REJECTED');pWalletAdmin(g('mc'));
+}
+
+function approveWithdrawReq(id){
+  const r=DB.withdrawRequests.find(x=>x.id===id);if(!r||r.status!=='pending')return;
+  if(!confirm(`Mark as PAID? Manually transfer 🪙${r.amount} to UPI: ${r.upiId}`))return;
+  r.status='approved';r.paidAt=Date.now();
+  DB.requests.push({id:'notif'+Date.now(),type:'match_result',toUserId:r.captainId,fromUserId:'admin1',status:'unread',at:Date.now(),
+    title:'✅ Withdrawal Processed!',
+    body:`🪙${r.amount} tumhare UPI (${r.upiId}) par transfer kar diye gaye hain.`});
+  DB.save();showToast('✓ MARKED AS PAID',false,'ok');pWalletAdmin(g('mc'));
+}
+
+function clearPaymentHistory(){
+  if(!confirm('Clear all approved/rejected wallet & withdraw history? Pending requests will NOT be affected.')) return;
+  DB._d.walletRequests=(DB.walletRequests||[]).filter(r=>r.status==='pending');
+  DB._d.withdrawRequests=(DB.withdrawRequests||[]).filter(r=>r.status==='pending');
+  // Also clear tournament payment records (approved registrations paymentId)
+  (DB.registrations||[]).forEach(r=>{if(r.paymentId&&r.paymentId!=='FREE'){r.paymentId='CLEARED';}r.utr&&(r.utr=null);});
+  DB.save();showToast('✓ HISTORY CLEARED',false,'ok');pWalletAdmin(g('mc'));
+}
+
+
+function rejectWithdrawReq(id){
+  const r=DB.withdrawRequests.find(x=>x.id===id);if(!r||r.status!=='pending')return;
+  if(!confirm('Reject this withdraw request? Tokens will be refunded to captain wallet.'))return;
+  const u=DB.users.find(x=>x.id===r.captainId);
+  if(u) u.walletBalance=(u.walletBalance||0)+r.amount;
+  r.status='rejected';
+  DB.requests.push({id:'notif'+Date.now(),type:'match_result',toUserId:r.captainId,fromUserId:'admin1',status:'unread',at:Date.now(),
+    title:'❌ Withdrawal Rejected',
+    body:`Tumhari 🪙${r.amount} withdraw request reject ho gayi. Tokens wapas wallet mein add ho gaye hain.`});
+  DB.save();showToast('REJECTED & REFUNDED');pWalletAdmin(g('mc'));
+}
+
 function pProfile(el){
   const u=cu;
   const team=DB.teams.find(t=>t.members.includes(u.id));
@@ -2886,7 +3369,43 @@ function unbanTeamFromMatch(matchId, teamId){
   });
   DB.save();showToast('✓ UNBANNED',false,'ok');adminDailyBanMenu(matchId);
 }
-function openEditProfile(){const u=cu;openMo(`<button class="mo-close" onclick="closeMo()">✕</button><div class="mo-title">✏ EDIT PROFILE</div><label class="fl">Full Name</label><input class="fi" id="ep-n" value="${u.name}"/><label class="fl">In-Game Name</label><input class="fi" id="ep-i" value="${u.ign}"/><label class="fl">Free Fire UID</label><input class="fi" id="ep-u" value="${u.uid}"/><label class="fl">New Password (blank = keep)</label><input class="fi" type="password" id="ep-w" placeholder="New password"/><div class="err-msg" id="ep-e"></div><button class="btn btn-cyan btn-full" onclick="saveProfile()">⚡ SAVE</button>`);}
+function openEditProfile(){
+  const u=cu;
+  // Admin freely edits; captain/player must request
+  if(u.role!=='admin'){
+    openMo(`<button class="mo-close" onclick="closeMo()">✕</button>
+      <div class="mo-title">✏ EDIT PROFILE REQUEST</div>
+      <div style="background:rgba(255,193,7,0.05);border:1px solid rgba(255,193,7,0.2);padding:12px;border-radius:6px;margin-bottom:14px;font-family:var(--font-mono);font-size:10px;color:var(--gold);line-height:1.8">
+        ⚠ Profile changes require admin approval.<br>Fill in your new details below — admin will review and update.
+      </div>
+      <label class="fl">New Full Name</label><input class="fi" id="ep-n" value="${u.name}"/>
+      <label class="fl">New In-Game Name (IGN)</label><input class="fi" id="ep-i" value="${u.ign}"/>
+      <label class="fl">New Free Fire UID</label><input class="fi" id="ep-u" value="${u.uid}"/>
+      <label class="fl">New Password (leave blank = no change)</label><input class="fi" type="password" id="ep-w" placeholder="New password"/>
+      <label class="fl">Reason / Note</label><input class="fi" id="ep-reason" placeholder="Why are you changing? e.g. name change"/>
+      <div class="err-msg" id="ep-e"></div>
+      <button class="btn btn-cyan btn-full" onclick="submitProfileEditRequest()">📩 SEND REQUEST TO ADMIN</button>`);
+    return;
+  }
+  openMo(`<button class="mo-close" onclick="closeMo()">✕</button><div class="mo-title">✏ EDIT PROFILE</div><label class="fl">Full Name</label><input class="fi" id="ep-n" value="${u.name}"/><label class="fl">In-Game Name</label><input class="fi" id="ep-i" value="${u.ign}"/><label class="fl">Free Fire UID</label><input class="fi" id="ep-u" value="${u.uid}"/><label class="fl">New Password (blank = keep)</label><input class="fi" type="password" id="ep-w" placeholder="New password"/><div class="err-msg" id="ep-e"></div><button class="btn btn-cyan btn-full" onclick="saveProfile()">⚡ SAVE</button>`);
+}
+function submitProfileEditRequest(){
+  const n=v('ep-n'),i=v('ep-i'),uid=v('ep-u'),reason=v('ep-reason');
+  const w=document.getElementById('ep-w')?.value||'';
+  if(!n||!i||!uid){set('ep-e','⚠ NAME, IGN & UID REQUIRED');return;}
+  // Check if previous pending request exists
+  const existing=DB.requests.find(r=>r.type==='profile_edit_request'&&r.fromUserId===cu.id&&r.status==='pending');
+  if(existing){set('ep-e','⚠ ALREADY SENT — WAIT FOR ADMIN REVIEW');return;}
+  DB.requests.push({
+    id:'per'+Date.now(),type:'profile_edit_request',
+    fromUserId:cu.id,toUserId:'admin1',status:'pending',at:Date.now(),
+    title:`✏ Profile Edit Request — ${cu.name}`,
+    body:`${cu.name} wants to update profile.\nName: ${n}\nIGN: ${i}\nUID: ${uid}${w?'\n(Password change requested)':''}${reason?'\nReason: '+reason:''}`,
+    newName:n,newIgn:i,newUid:uid,newPw:w,reason
+  });
+  DB.save();closeMo();showToast('📩 REQUEST SENT! ADMIN WILL REVIEW',false,'ok');
+}
+function saveProfile(){const n=v('ep-n'),i=v('ep-i'),u=v('ep-u'),w=v('ep-w');if(!n||!i||!u){set('ep-e','⚠ REQUIRED FIELDS');return;}cu.name=n;cu.ign=i;cu.uid=u;if(w)cu.password=w;const dbU=DB.users.find(x=>x.id===cu.id);if(dbU){dbU.name=n;dbU.ign=i;dbU.uid=u;if(w)dbU.password=w;}DB.save();closeMo();showToast('✓ PROFILE UPDATED',false,'ok');g('nav-nm').textContent=cu.name;pProfile(g('mc'));}
 function saveProfile(){const n=v('ep-n'),i=v('ep-i'),u=v('ep-u'),w=v('ep-w');if(!n||!i||!u){set('ep-e','⚠ REQUIRED FIELDS');return;}cu.name=n;cu.ign=i;cu.uid=u;if(w)cu.password=w;DB.save();closeMo();showToast('✓ PROFILE UPDATED',false,'ok');g('nav-nm').textContent=cu.name;pProfile(g('mc'));}
 
 // ══ SEASON MODULE LOADER ══
@@ -3001,6 +3520,7 @@ function pAdminApprovals(el){
   const pending=DB.users.filter(u=>u.status==='pending');
   const banned=DB.users.filter(u=>u.status==='banned');
   const approvalEnabled=DB._d.settings.requireApproval;
+  const profileEditReqs=DB.requests.filter(r=>r.type==='profile_edit_request'&&r.status==='pending');
   el.innerHTML=`<div style="animation:pageIn .35s ease">
     <div class="sec-hd"><div class="sec-title"><div class="sec-bar"></div>APPROVALS & SETTINGS</div></div>
     <div class="xcard">
@@ -3031,6 +3551,24 @@ function pAdminApprovals(el){
         </div>`).join('')}
     </div>
     <div class="xcard">
+      <div class="xcard-t">✏ Profile Edit Requests (${profileEditReqs.length})</div>
+      ${!profileEditReqs.length?`<div style="color:#607d8b;font-family:'Roboto Mono',monospace;font-size:10px;letter-spacing:2px">// NONE PENDING</div>`:
+        profileEditReqs.map(r=>{const u=DB.users.find(x=>x.id===r.fromUserId);
+        return `<div class="prow" style="flex-direction:column;align-items:flex-start;gap:8px">
+            <div class="prow-l"><div class="av av-c">${(u?.name||'?')[0]}</div>
+              <div><div class="prow-name">${u?.name||'Unknown'} <span class="nav-role r-${u?.role||'player'}">${(u?.role||'player').toUpperCase()}</span></div>
+              <div class="prow-uid">Name: <b style="color:#fff">${r.newName}</b> · IGN: <span style="color:var(--cyan)">${r.newIgn}</span> · UID: <span style="color:var(--cyan)">${r.newUid}</span></div>
+              ${r.newPw?`<div class="prow-uid" style="color:var(--gold)">🔑 Password change requested</div>`:''}
+              ${r.reason?`<div class="prow-uid">Reason: ${r.reason}</div>`:''}
+              <div class="prow-uid">${new Date(r.at).toLocaleString()}</div></div>
+            </div>
+            <div class="prow-acts" style="width:100%;justify-content:flex-end">
+              <button class="btn btn-green btn-xs" onclick="approveProfileEdit('${r.id}')">✓ APPROVE</button>
+              <button class="btn btn-red btn-xs" onclick="rejectProfileEdit('${r.id}')">✗ REJECT</button>
+            </div>
+          </div>`;}).join('')}
+    </div>
+    <div class="xcard">
       <div class="xcard-t">🚫 Banned Accounts (${banned.length})</div>
       ${!banned.length?`<div style="color:#607d8b;font-family:'Roboto Mono',monospace;font-size:10px">// NONE</div>`:
         banned.map(u=>`<div class="prow">
@@ -3044,6 +3582,8 @@ function pAdminApprovals(el){
     </div>
   </div>`;
 }
+function approveProfileEdit(id){const r=DB.requests.find(x=>x.id===id);if(!r)return;const u=DB.users.find(x=>x.id===r.fromUserId);if(!u)return;u.name=r.newName;u.ign=r.newIgn;u.uid=r.newUid;if(r.newPw)u.password=r.newPw;r.status='approved';DB.requests.push({id:'notif'+Date.now(),type:'match_result',toUserId:u.id,fromUserId:'admin1',status:'unread',at:Date.now(),title:'✅ Profile Updated!',body:`Tumhara profile update ho gaya. Name: ${u.name} · IGN: ${u.ign}`});DB.save();showToast('✓ PROFILE UPDATED',false,'ok');pAdminApprovals(g('mc'));}
+function rejectProfileEdit(id){const r=DB.requests.find(x=>x.id===id);if(!r)return;const u=DB.users.find(x=>x.id===r.fromUserId);r.status='rejected';DB.requests.push({id:'notif'+Date.now(),type:'match_result',toUserId:r.fromUserId,fromUserId:'admin1',status:'unread',at:Date.now(),title:'❌ Profile Edit Rejected',body:'Tumhari profile edit request reject ho gayi. Admin se contact karo.'});DB.save();showToast('REJECTED');pAdminApprovals(g('mc'));}
 function toggleApproval(){DB._d.settings.requireApproval=!DB._d.settings.requireApproval;DB.save();showToast(DB._d.settings.requireApproval?'✓ APPROVAL ENABLED':'APPROVAL DISABLED',false,'ok');pAdminApprovals(g('mc'));}
 function approveUser(id){const u=DB.users.find(x=>x.id===id);if(u){u.status='approved';DB.save();showToast('✓ USER APPROVED',false,'ok');pAdminApprovals(g('mc'));}}
 function rejectUser(id){if(!confirm('Delete this profile?'))return;DB._d.users=DB.users.filter(x=>x.id!==id);DB.save();showToast('PROFILE DELETED');pAdminApprovals(g('mc'));}
@@ -4601,44 +5141,23 @@ function doResetPassword(userId){
   showToast('✓ PASSWORD RESET FOR '+u.name,false,'ok');
 }
 
-// ══ RAZORPAY CONFIG ══
-const RZP_KEY = ZONEX_CONFIG.RAZORPAY_KEY;
+// ══ WALLET HELPERS ══
+function walletBal(u){ return (u && typeof u.walletBalance === 'number') ? u.walletBalance : 0; }
+
+function deductWallet(amt){
+  // Update cu + DB.users (same ref usually, but explicit for Firebase sync safety)
+  const newBal=(walletBal(cu))-amt;
+  cu.walletBalance=newBal;
+  const dbUser=DB.users.find(x=>x.id===cu.id);
+  if(dbUser) dbUser.walletBalance=newBal;
+  return newBal;
+}
 
 function parseAmount(entryStr){
   // Extract numeric amount from strings like "₹50", "Rs 100", "50", "₹10 per squad"
   if(!entryStr) return 0;
   const match = entryStr.replace(/,/g,'').match(/\d+(\.\d+)?/);
   return match ? Math.round(parseFloat(match[0])) : 0;
-}
-
-function openRazorpay(options){
-  return new Promise((resolve, reject) => {
-    if(typeof Razorpay === 'undefined'){
-      showToast('⚠ PAYMENT LOAD NAHI HUA, RETRY KARO',true);
-      reject('Razorpay not loaded');
-      return;
-    }
-    const rzp = new Razorpay({
-      key: RZP_KEY,
-      currency: ZONEX_CONFIG.CURRENCY,
-      name: ZONEX_CONFIG.SITE_NAME,
-      description: options.description || 'Entry Fee',
-      image: '',
-      amount: options.amount * 100, // paise
-      prefill: {
-        name: cu?.name || '',
-        contact: cu?.phone || ''
-      },
-      theme: { color: '#00b4ff' },
-      handler: function(response){
-        resolve(response.razorpay_payment_id);
-      },
-      modal: {
-        ondismiss: function(){ reject('dismissed'); }
-      }
-    });
-    rzp.open();
-  });
 }
 
 
