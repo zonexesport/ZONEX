@@ -490,7 +490,6 @@ html, body {
 
 /* Apply bg images to cards */
 .sc-img{position:relative;overflow:hidden;}
-.sc-img::after{content:'';position:absolute;inset:0;background:rgba(0,0,0,0.55);pointer-events:none;}
 .sc-img .sc-val,.sc-img .sc-lbl,.sc-img .sc-icon{position:relative;z-index:1;}
 .card-bg{background-size:cover !important;background-position:center !important;}
 </style>
@@ -657,7 +656,7 @@ try {
 // DATABASE — Firebase backed with localStorage fallback
 // ══════════════════════════════════════════════
 const DB = {
-  _d: {users:[],tournaments:[],teams:[],registrations:[],matches:[],requests:[],seasons:[],settings:{requireApproval:false},chat:{},pointTables:{},walletRequests:[],withdrawRequests:[]},
+  _d: {users:[],tournaments:[],teams:[],registrations:[],matches:[],requests:[],seasons:[],settings:{requireApproval:false},chat:{},pointTables:{},walletRequests:[],withdrawRequests:[],featuredMatches:[]},
   _loaded: false,
   _listeners: [],
 
@@ -674,6 +673,7 @@ const DB = {
     if(!this._d.pointTables) this._d.pointTables={};
     if(!this._d.walletRequests) this._d.walletRequests=[];
     if(!this._d.withdrawRequests) this._d.withdrawRequests=[];
+    if(!this._d.featuredMatches) this._d.featuredMatches=[];
   },
 
   _ensureAdmin(){
@@ -777,6 +777,7 @@ const DB = {
   get seasons(){return this._d.seasons||[];},
   get walletRequests(){return this._d.walletRequests||[];},
   get withdrawRequests(){return this._d.withdrawRequests||[];},
+  get featuredMatches(){return this._d.featuredMatches||[];},
 };
 
 let cu=null,regRole='player';
@@ -1028,6 +1029,158 @@ function pDash(el){
     </div>`;
   }
 
+  // ── FEATURED MATCHES WIDGET (Captain/Player Dashboard) ──
+  let featuredWidget='';
+  if(cu.role==='captain'||cu.role==='player'){
+    const fmIds=DB._d.featuredMatches||[];
+    const allMatches=DB.matches||[];
+    const featuredList=fmIds.map(id=>allMatches.find(m=>m.id===id)).filter(Boolean);
+    if(featuredList.length){
+      const myTeam=DB.teams.find(t=>t.captainId===cu.id||t.members.includes(cu.id));
+      const dailyFeatured=featuredList.filter(m=>m.matchType==='daily'||m.matchType==='DAILY');
+      const tourFeatured=featuredList.filter(m=>m.matchType!=='daily'&&m.matchType!=='DAILY');
+
+      // Build daily match cards exactly like renderDailyForPlayer does
+      const _imgStyle=m=>{
+        const img=(DB._d.customImages&&DB._d.customImages['match_'+m.id])||(DB._d.images&&DB._d.images['match_card_default'])||'';
+        if(!img) return '';
+        return "background-image:url('"+img+"');background-size:cover;background-position:center;background-repeat:no-repeat;";
+      };
+      const isCap=myTeam&&myTeam.captainId===cu.id;
+
+      let dailyCardsHtml='';
+      dailyFeatured.forEach(m=>{
+        const req=myTeam?DB.requests.find(r=>r.type==='daily_join'&&r.matchId===m.id&&r.teamId===myTeam.id):null;
+        if(req){
+          // Already registered — show registered card
+          const approved=req.status==='approved';
+          const slotNo=m.brSlots&&myTeam?Object.entries(m.brSlots).find(([,v])=>v===myTeam.id)?.[0]:null;
+          dailyCardsHtml+=`<div class="match-block" style="border-left:3px solid ${approved?'var(--cyan)':req.status==='rejected'?'var(--red)':'var(--gold)'};margin-bottom:10px;${_imgStyle(m)}">
+            <div class="match-top">
+              <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+                <span class="match-type-badge mt-daily">📅 DAILY</span>
+                ${m.label?`<span style="font-weight:700;font-size:13px;color:#fff;letter-spacing:1px">${m.label}</span>`:''}
+                ${(m.gameMode||m.matchFormat)?`<span style="font-family:var(--font-mono);font-size:9px;color:var(--orange);background:rgba(255,107,43,0.1);border:1px solid rgba(255,107,43,0.3);border-radius:3px;padding:2px 7px">${m.gameMode||''} ${m.matchFormat||''}</span>`:''}
+              </div>
+              <div style="display:flex;gap:6px;align-items:center">
+                <span class="badge ${m.status==='open'?'b-open':m.status==='ongoing'?'b-ongoing':'b-closed'}">${(m.status||'open').toUpperCase()}</span>
+                <span class="badge ${approved?'b-open':req.status==='rejected'?'b-closed':'b-ongoing'}">${approved?'✓ APPROVED':req.status==='rejected'?'✗ REJECTED':'⏳ PENDING'}</span>
+              </div>
+            </div>
+            ${slotNo?`<div style="margin:8px 16px 0;background:linear-gradient(135deg,rgba(124,77,255,0.15),rgba(0,180,255,0.1));border:1px solid rgba(124,77,255,0.4);border-radius:6px;padding:8px 14px;display:flex;align-items:center;gap:10px"><span style="font-family:var(--font-mono);font-size:9px;color:var(--purple);letter-spacing:2px">YOUR SLOT</span><span style="font-family:var(--font-hd);font-size:22px;font-weight:900;color:var(--cyan)">#${slotNo}</span></div>`:''}
+            <div style="padding:6px 16px 10px;display:flex;gap:14px;flex-wrap:wrap">
+              <div><div class="room-lbl">📅 Date</div><div style="font-size:13px;font-weight:600">${m.date||'TBD'}</div></div>
+              <div><div class="room-lbl">⏰ Time</div><div style="font-size:13px;font-weight:600">${m.time||'TBD'}</div></div>
+              ${m.entry?`<div><div class="room-lbl">💰 Entry</div><div style="font-size:13px;font-weight:600;color:var(--gold)">${m.entry}</div></div>`:''}
+              ${m.prize?`<div><div class="room-lbl">🏆 Prize</div><div style="font-size:13px;font-weight:600;color:var(--gold)">${m.prize}</div></div>`:''}
+            </div>
+            ${approved&&m.roomReleased?`<div class="room-unlocked" style="margin:0 16px 12px"><div style="display:flex;gap:20px;flex-wrap:wrap"><div><div class="room-lbl">🔓 ROOM ID</div><div class="room-id-val">${m.roomId||'—'}</div></div><div><div class="room-lbl">🔑 PASSWORD</div><div class="room-pw-val">${m.roomPass||'—'}</div></div></div></div>`
+            :approved?`<div style="padding:0 16px 12px;font-family:var(--font-mono);font-size:10px;color:var(--muted)">⏳ Room match se pehle release hoga</div>`:''}
+          </div>`;
+        } else {
+          // Available — show join card
+          const isBanned=myTeam&&(m.bannedTeams||[]).includes(myTeam.id);
+          const isClosed=m.status==='closed'||m.status==='completed';
+          const full=m.maxTeams&&(m.brTeamIds||[]).length>=(m.maxTeams||12);
+          dailyCardsHtml+=`<div class="match-block" style="border-left:3px solid ${isBanned?'var(--red)':isClosed||full?'var(--muted2)':'var(--green)'};margin-bottom:10px;${_imgStyle(m)}">
+            <div class="match-top">
+              <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+                <span class="match-type-badge mt-daily">📅 DAILY</span>
+                ${m.label?`<span style="font-weight:700;font-size:13px;color:#fff;letter-spacing:1px">${m.label}</span>`:''}
+                ${(m.gameMode||m.matchFormat)?`<span style="font-family:var(--font-mono);font-size:9px;color:var(--orange);background:rgba(255,107,43,0.1);border:1px solid rgba(255,107,43,0.3);border-radius:3px;padding:2px 7px">${m.gameMode||''} ${m.matchFormat||''}</span>`:''}
+              </div>
+              <span class="badge ${m.status==='open'?'b-open':m.status==='ongoing'?'b-ongoing':'b-closed'}">${(m.status||'open').toUpperCase()}</span>
+            </div>
+            <div style="padding:6px 16px 10px;display:flex;gap:14px;flex-wrap:wrap">
+              <div><div class="room-lbl">📅 Date</div><div style="font-size:13px;font-weight:600">${m.date||'TBD'}</div></div>
+              <div><div class="room-lbl">⏰ Time</div><div style="font-size:13px;font-weight:600">${m.time||'TBD'}</div></div>
+              ${m.entry?`<div><div class="room-lbl">💰 Entry</div><div style="font-size:13px;font-weight:600;color:var(--gold)">${m.entry}</div></div>`:''}
+              ${m.prize?`<div><div class="room-lbl">🏆 Prize</div><div style="font-size:13px;font-weight:600;color:var(--gold)">${m.prize}</div></div>`:''}
+              ${m.maxTeams?`<div><div class="room-lbl">👥 Slots</div><div style="font-size:13px;font-weight:600;color:var(--cyan)">${(m.brTeamIds||[]).length}/${m.maxTeams}</div></div>`:''}
+            </div>
+            <div style="padding:0 16px 12px">
+              ${isBanned?`<span style="font-family:var(--font-mono);font-size:10px;color:var(--red)">🚫 TEAM BANNED FROM THIS MATCH</span>`
+                :isClosed?`<span style="font-family:var(--font-mono);font-size:10px;color:var(--muted)">// MATCH CLOSED</span>`
+                :full?`<span style="font-family:var(--font-mono);font-size:10px;color:var(--muted)">// SLOTS FULL</span>`
+                :isCap?`<button class="btn btn-green btn-sm" onclick="openDailyJoin('${m.id}')">⚡ JOIN MATCH</button>`
+                :`<span style="font-family:var(--font-mono);font-size:10px;color:var(--muted)">// SIRF CAPTAIN JOIN KAR SAKTA HAI</span>`}
+            </div>
+          </div>`;
+        }
+      });
+
+      // Tournament match cards use renderMatchCard exactly
+      const tourCardsHtml=tourFeatured.map(m=>renderMatchCard(m)).join('');
+
+      featuredWidget=`<div class="xcard" style="border:1px solid rgba(255,193,7,0.35);padding-top:20px">
+        <div style="position:absolute;top:0;left:0;right:0;height:2px;background:linear-gradient(90deg,var(--gold),var(--orange),var(--gold))"></div>
+        <div class="xcard-t" style="display:flex;align-items:center;gap:8px;color:var(--gold);margin-bottom:14px">
+          <span style="font-size:16px">🎯</span> FEATURED MATCHES
+          <span style="font-family:var(--font-mono);font-size:9px;background:rgba(255,193,7,0.1);border:1px solid rgba(255,193,7,0.3);padding:2px 8px;border-radius:3px;color:var(--gold);margin-left:auto">${featuredList.length} MATCH${featuredList.length>1?'ES':''}</span>
+        </div>
+        ${dailyCardsHtml}
+        ${tourCardsHtml}
+      </div>`;
+    }
+  }
+
+  // ── ADMIN FEATURED MATCH SELECTOR PANEL ──
+  let adminFeaturedPanel='';
+  if(cu.role==='admin'){
+    const fmIds=DB._d.featuredMatches||[];
+    const allMatches=DB.matches||[];
+    const allMatchesSorted=[...allMatches].sort((a,b)=>(b.createdAt||0)-(a.createdAt||0));
+    const dailyAll=allMatchesSorted.filter(m=>m.matchType==='daily'||m.matchType==='DAILY');
+    const tourAll=allMatchesSorted.filter(m=>m.matchType!=='daily'&&m.matchType!=='DAILY');
+
+    const renderFeatRow=(m,isFeat)=>{
+      const isDaily=m.matchType==='daily'||m.matchType==='DAILY';
+      return`<div style="display:flex;align-items:center;gap:9px;padding:8px 10px;background:${isFeat?'rgba(255,193,7,0.06)':'rgba(255,255,255,0.02)'};border:1px solid ${isFeat?'rgba(255,193,7,0.3)':'rgba(255,255,255,0.06)'};border-radius:5px;margin-bottom:5px;flex-wrap:wrap">
+        <input type="checkbox" id="fm-cb-${m.id}" onchange="toggleFeaturedMatch('${m.id}',this.checked)" ${isFeat?'checked':''} style="width:16px;height:16px;accent-color:var(--gold);cursor:pointer;flex-shrink:0"/>
+        <label for="fm-cb-${m.id}" style="flex:1;cursor:pointer;min-width:0">
+          <div style="display:flex;align-items:center;gap:5px;flex-wrap:wrap;margin-bottom:3px">
+            <span style="font-size:9px;padding:1px 6px;border-radius:2px;font-family:var(--font-mono);font-weight:700;background:${isDaily?'rgba(0,230,118,0.12)':'rgba(0,180,255,0.12)'};color:${isDaily?'var(--green)':'var(--cyan)'};border:1px solid ${isDaily?'rgba(0,230,118,0.25)':'rgba(0,180,255,0.25)'}">${isDaily?'DAILY':'TOURNAMENT'}</span>
+            <span style="font-size:9px;color:${m.status==='open'?'var(--green)':m.status==='ongoing'?'var(--gold)':'var(--muted)'};font-family:var(--font-mono)">${(m.status||'open').toUpperCase()}</span>
+            ${isFeat?'<span style="font-size:9px;color:var(--gold);font-family:var(--font-mono)">⭐ FEATURED</span>':''}
+          </div>
+          <div style="font-size:13px;font-weight:600;color:#fff">${m.label||m.tournament||m.round||'Match'}</div>
+          <div style="font-family:var(--font-mono);font-size:9px;color:var(--muted);margin-top:2px">📅 ${m.date||'TBD'} · ⏰ ${m.time||'TBD'}${m.entry?` · 💰 ${m.entry}`:''}${m.prize?` · 🏆 ${m.prize}`:''}</div>
+        </label>
+      </div>`;
+    };
+
+    adminFeaturedPanel=`<div class="xcard" style="border:1px solid rgba(255,193,7,0.3);margin-bottom:16px">
+      <div style="position:absolute;top:0;left:0;right:0;height:2px;background:linear-gradient(90deg,var(--gold),var(--orange),var(--gold));border-radius:4px 4px 0 0;margin:0"></div>
+      <div class="xcard-t" style="display:flex;align-items:center;justify-content:space-between;color:var(--gold)">
+        <span>🎯 FEATURED MATCH SELECTOR</span>
+        <span style="font-family:var(--font-mono);font-size:9px;color:var(--muted);font-weight:400">${fmIds.length} SELECTED</span>
+      </div>
+      <div style="background:rgba(255,193,7,0.04);border:1px solid rgba(255,193,7,0.15);border-radius:5px;padding:10px 12px;margin-bottom:14px;font-family:var(--font-mono);font-size:10px;color:#aaa;line-height:1.8">
+        ✅ Jo matches <strong style="color:var(--gold)">tick</strong> karoge wo Captain/Player ke <strong style="color:#fff">Dashboard</strong> mein "Featured Matches" section mein dikhenge — seedha registration ke saath.
+      </div>
+
+      <div style="display:flex;gap:6px;margin-bottom:14px;flex-wrap:wrap">
+        <button class="btn btn-ghost btn-xs" id="fm-tab-all" onclick="switchFeatTab('all')" style="background:rgba(26,111,255,0.15);color:#2979ff;border-color:rgba(26,111,255,0.4)">📋 ALL (${allMatches.length})</button>
+        <button class="btn btn-ghost btn-xs" id="fm-tab-daily" onclick="switchFeatTab('daily')">📅 DAILY (${dailyAll.length})</button>
+        <button class="btn btn-ghost btn-xs" id="fm-tab-tour" onclick="switchFeatTab('tour')">🏆 TOURNAMENT (${tourAll.length})</button>
+        <button class="btn btn-red btn-xs" onclick="clearAllFeatured()" style="margin-left:auto">🗑 CLEAR ALL</button>
+      </div>
+
+      <div id="fm-panel-all">
+        ${allMatches.length?allMatchesSorted.map(m=>renderFeatRow(m,fmIds.includes(m.id))).join('')
+          :'<div style="text-align:center;padding:20px;color:var(--muted);font-family:var(--font-mono);font-size:10px">// KOI MATCH NAHI MILA — PEHLE MATCHES BANAO</div>'}
+      </div>
+      <div id="fm-panel-daily" style="display:none">
+        ${dailyAll.length?dailyAll.map(m=>renderFeatRow(m,fmIds.includes(m.id))).join('')
+          :'<div style="text-align:center;padding:20px;color:var(--muted);font-family:var(--font-mono);font-size:10px">// KOI DAILY MATCH NAHI</div>'}
+      </div>
+      <div id="fm-panel-tour" style="display:none">
+        ${tourAll.length?tourAll.map(m=>renderFeatRow(m,fmIds.includes(m.id))).join('')
+          :'<div style="text-align:center;padding:20px;color:var(--muted);font-family:var(--font-mono);font-size:10px">// KOI TOURNAMENT MATCH NAHI</div>'}
+      </div>
+    </div>`;
+  }
+
   el.innerHTML=`<div style="animation:pageIn .35s ease">
     <div class="sec-hd"><div class="sec-title"><div class="sec-bar"></div>DASHBOARD</div>
       ${cu.role==='admin'?`<div style="display:flex;gap:8px"><button class="btn btn-gold btn-sm" onclick="openTeamSearch()">🔍 FIND TEAM</button><button class="btn btn-red btn-sm" onclick="openAdminChangePw()">🔐 CHANGE PW</button></div>`:''}</div>
@@ -1036,65 +1189,126 @@ function pDash(el){
       <div class="sc ${cardBgStyle('stat_open')?'sc-img':''}" style="--sc-grad:linear-gradient(90deg,var(--green),#00c97d);${cardBgStyle('stat_open')}"><div class="sc-icon">🟢</div><div class="sc-val">${oc}</div><div class="sc-lbl">Open Now</div></div>
       <div class="sc ${cardBgStyle('stat_seasons')?'sc-img':''}" style="--sc-grad:linear-gradient(90deg,var(--purple),var(--purple2));${cardBgStyle('stat_seasons')}"><div class="sc-icon">⭐</div><div class="sc-val">${sc}</div><div class="sc-lbl">Seasons</div></div>
     </div>
+    ${adminFeaturedPanel}
+    ${featuredWidget}
     ${widget}
     <div class="xcard"><div class="xcard-t">Latest Tournaments</div>
       ${DB.tournaments.slice(-3).reverse().map(tCardFn).join('')||'<div style="text-align:center;padding:20px;color:var(--muted);font-family:var(--font-mono);font-size:10px;letter-spacing:2px">// NO TOURNAMENTS YET</div>'}
     </div></div>`;
 }
 
+// ── Featured Match Functions ──
+function toggleFeaturedMatch(matchId, checked){
+  if(!DB._d.featuredMatches) DB._d.featuredMatches=[];
+  if(checked){
+    if(!DB._d.featuredMatches.includes(matchId)) DB._d.featuredMatches.push(matchId);
+    showToast('⭐ MATCH FEATURED — Players ko dikhega',false,'ok');
+  } else {
+    DB._d.featuredMatches=DB._d.featuredMatches.filter(id=>id!==matchId);
+    showToast('✕ MATCH UNFEATURED',false);
+  }
+  DB.save();
+  // Update counter badge only, avoid full re-render
+  const counter=document.querySelector('.xcard-t span[style*="font-weight:400"]');
+  if(counter) counter.textContent=(DB._d.featuredMatches||[]).length+' SELECTED';
+}
+
+function clearAllFeatured(){
+  if(!confirm('Sare featured matches clear karo?')) return;
+  DB._d.featuredMatches=[];
+  DB.save();
+  showToast('FEATURED MATCHES CLEARED');
+  pDash(g('mc'));
+}
+
+function switchFeatTab(tab){
+  ['all','daily','tour'].forEach(t=>{
+    const panel=document.getElementById('fm-panel-'+t);
+    const btn=document.getElementById('fm-tab-'+t);
+    if(panel) panel.style.display=t===tab?'block':'none';
+    if(btn){
+      if(t===tab){btn.style.background='rgba(26,111,255,0.15)';btn.style.color='#2979ff';btn.style.borderColor='rgba(26,111,255,0.4)';}
+      else{btn.style.background='';btn.style.color='';btn.style.borderColor='';}
+    }
+  });
+}
+
 function tCardFn(t){
-  const _tbg = cardBgStyle('tournament_card','tour_'+t.id);
+  const imgUrl=cardBgStyle('tournament_card','tour_'+t.id).match(/url\(['"]?([^'")\s]+)['"]?\)/)?.[1]||'';
+  const hasBg=!!imgUrl;
   const sc={open:'b-open',closed:'b-closed',ongoing:'b-ongoing'}[t.status]||'b-closed';
-  const ac={open:'var(--green)',closed:'var(--muted)',ongoing:'var(--gold)'}[t.status];
+  const ac={open:'#00e676',closed:'#607d8b',ongoing:'#ffc107'}[t.status];
   const regs=DB.registrations.filter(r=>r.tournamentId===t.id).length;
-  return`<div class="tcard" style="${_tbg}position:relative"><div class="tcard-accent" style="background:${ac}"></div><div style="position:relative;z-index:1">
-    <div class="tcard-top"><div><div class="tcard-name" style="text-shadow:0 1px 4px rgba(0,0,0,0.9)">${t.name}</div><div class="tcard-meta" style="color:#e0e0e0;font-weight:600;text-shadow:0 1px 3px rgba(0,0,0,0.9)">📅 ${t.date} · 🗺 ${t.map||'TBD'} · 👥 ${regs}/${t.maxTeams||12}${t.format?' · '+t.format:''}</div></div><span class="badge ${sc}">${t.status.toUpperCase()}</span></div>
-    <div class="tcard-body"><div class="tcard-prize">🏆 ${t.prize||'—'}</div>${t.entry?`<div style="font-family:var(--font-mono);font-size:10px;color:var(--gold2)">ENTRY: ${t.entry}</div>`:''}</div>
-  </div></div>`;
+  const gmBadge=t.gameMode?`<span style="font-family:var(--font-mono);font-size:9px;padding:3px 9px;border-radius:3px;font-weight:700;${t.gameMode==='CS'?'background:rgba(255,107,43,0.2);color:#ff6d00;border:1px solid rgba(255,107,43,0.4)':'background:rgba(0,180,255,0.15);color:#00b4ff;border:1px solid rgba(0,180,255,0.4)'}">${t.gameMode==='CS'?'⚔ CS':'🎯 BR'}</span>`:'';
+  const fmtBadge=t.format?`<span style="font-family:var(--font-mono);font-size:9px;padding:3px 9px;border-radius:3px;background:rgba(124,77,255,0.18);color:#b388ff;border:1px solid rgba(124,77,255,0.4)">${t.format}</span>`:'';
+  const ts=hasBg?'text-shadow:0 2px 8px rgba(0,0,0,1),0 1px 3px rgba(0,0,0,0.9)':'';
+  return`<div class="tcard" style="position:relative;overflow:hidden;margin-bottom:12px;border-radius:10px;border:1px solid rgba(26,111,255,0.22)">
+    ${hasBg?`<div style="position:absolute;inset:0;background-image:url('${imgUrl}');background-size:cover;background-position:center"></div>`:''}
+    <div class="tcard-accent" style="background:${ac}"></div>
+    <div style="position:relative;z-index:1;padding:14px 16px">
+      <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:8px">
+        <div style="flex:1;min-width:0">
+          <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:7px">${gmBadge}${fmtBadge}</div>
+          <div class="tcard-name" style="font-size:18px;letter-spacing:2px;${ts}">${t.name}</div>
+          <div style="font-family:var(--font-mono);font-size:11px;color:${hasBg?'#ccc':'var(--muted)'};margin-top:5px;line-height:1.9;${ts}">
+            📅 ${t.date}&nbsp;&nbsp;🗺 ${t.map||'TBD'}&nbsp;&nbsp;👥 ${regs}/${t.maxTeams||12} teams
+          </div>
+        </div>
+        <span class="badge ${sc}" style="flex-shrink:0;margin-top:2px">${t.status.toUpperCase()}</span>
+      </div>
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-top:12px;padding-top:10px;border-top:1px solid rgba(255,255,255,0.07)">
+        <div style="font-family:var(--font-hd);font-size:20px;font-weight:900;color:var(--gold);${ts}">🏆 ${t.prize||'TBD'}</div>
+        ${t.entry?`<div style="font-family:var(--font-mono);font-size:11px;color:var(--gold2);font-weight:700;letter-spacing:1px;${ts}">ENTRY: ${t.entry}</div>`:''}
+      </div>
+    </div>
+  </div>`;
 }
 
 // ── SEASONS PAGE ──
 // Full tournament card used in pTour page
 function tCardFnFull(t){
-  const _tbg = cardBgStyle('tournament_card','tour_'+t.id);
+  const imgUrl=cardBgStyle('tournament_card','tour_'+t.id).match(/url\(['"]?([^'")\s]+)['"]?\)/)?.[1]||'';
+  const hasBg=!!imgUrl;
   const sc={open:'b-open',closed:'b-closed',ongoing:'b-ongoing'}[t.status]||'b-closed';
-  const ac={open:'var(--green)',closed:'var(--muted)',ongoing:'var(--gold)'}[t.status];
+  const ac={open:'#00e676',closed:'#607d8b',ongoing:'#ffc107'}[t.status];
   const regs=DB.registrations.filter(r=>r.tournamentId===t.id).length;
   const alreg=cu.role==='captain'&&DB.registrations.find(r=>r.tournamentId===t.id&&r.captainId===cu.id);
   const regBtn=cu.role==='captain'&&t.status==='open'
-    ?(alreg?`<button class="btn btn-ghost btn-sm" disabled>✓ REGISTERED</button>`
-      :`<button class="btn btn-gold btn-sm" onclick="openRegTour('${t.id}')">⚡ REGISTER</button>`):'';
-  const adBtns=cu.role==='admin'?`<div style="display:flex;gap:5px;flex-wrap:wrap;margin-top:8px">
+    ?(alreg
+      ?`<button class="btn btn-ghost btn-sm" disabled style="opacity:0.6;cursor:default">✓ REGISTERED</button>`
+      :`<button class="btn btn-gold btn-sm" onclick="openRegTour('${t.id}')" style="font-size:12px;padding:10px 20px;letter-spacing:2px;font-weight:900;background:linear-gradient(135deg,rgba(255,193,7,0.25),rgba(255,152,0,0.15));border:1px solid rgba(255,193,7,0.6);box-shadow:0 0 12px rgba(255,193,7,0.2)">⚡ REGISTER</button>`):'';
+  const adBtns=cu.role==='admin'?`<div style="display:flex;gap:5px;flex-wrap:wrap;margin-top:10px">
     <button class="btn btn-purple btn-xs" onclick="pTourRegistrations('${t.id}')">📋 TEAMS (${regs})</button>
     <button class="btn btn-green btn-xs" onclick="chgS('${t.id}','open')">OPEN</button>
     <button class="btn btn-gold btn-xs" onclick="chgS('${t.id}','ongoing')">ONGOING</button>
     <button class="btn btn-ghost btn-xs" onclick="chgS('${t.id}','closed')">CLOSE</button>
     <button class="btn btn-red btn-xs" onclick="delTour('${t.id}')">DEL</button></div>`:'';
-  // BR / CS badge
-  const gameModeBadge=t.gameMode?`<span style="font-family:var(--font-mono);font-size:9px;padding:2px 8px;border-radius:3px;font-weight:700;${t.gameMode==='CS'?'background:rgba(255,107,43,0.15);color:var(--orange);border:1px solid rgba(255,107,43,0.35)':'background:rgba(0,180,255,0.12);color:var(--cyan);border:1px solid rgba(0,180,255,0.3)'}">${t.gameMode==='CS'?'⚔ CS':'🎯 BR'}</span>`:'';
-  const fmtBadge=t.format?`<span style="font-family:var(--font-mono);font-size:9px;padding:2px 8px;border-radius:3px;background:rgba(191,95,255,0.12);color:var(--purple);border:1px solid rgba(191,95,255,0.3)">${t.format}</span>`:'';
-  return`<div class="tcard" style="${_tbg}position:relative">
-    <div class="tcard-accent" style="background:${ac}"></div>
-    <div style="position:relative;z-index:1">
-    <div class="tcard-top">
-      <div style="flex:1">
-        <div style="display:flex;align-items:center;gap:7px;flex-wrap:wrap;margin-bottom:5px">
-          ${gameModeBadge}${fmtBadge}
+  const gmBadge=t.gameMode?`<span style="font-family:var(--font-mono);font-size:9px;padding:3px 10px;border-radius:3px;font-weight:700;${t.gameMode==='CS'?'background:rgba(255,107,43,0.2);color:#ff6d00;border:1px solid rgba(255,107,43,0.45)':'background:rgba(0,180,255,0.15);color:#00b4ff;border:1px solid rgba(0,180,255,0.45)'}">${t.gameMode==='CS'?'⚔ CS':'🎯 BR'}</span>`:'';
+  const fmtBadge=t.format?`<span style="font-family:var(--font-mono);font-size:9px;padding:3px 10px;border-radius:3px;background:rgba(124,77,255,0.2);color:#b388ff;border:1px solid rgba(124,77,255,0.45)">${t.format}</span>`:'';
+  const ts=hasBg?'text-shadow:0 2px 10px rgba(0,0,0,1),0 1px 4px rgba(0,0,0,0.8)':'';
+  return`<div class="tcard" style="position:relative;overflow:hidden;margin-bottom:14px;border-radius:12px;border:1px solid rgba(26,111,255,0.25);transition:border-color .3s" onmouseover="this.style.borderColor='rgba(41,121,255,0.5)'" onmouseout="this.style.borderColor='rgba(26,111,255,0.25)'">
+    ${hasBg?`<div style="position:absolute;inset:0;background-image:url('${imgUrl}');background-size:cover;background-position:center top"></div>`:''}
+    <div class="tcard-accent" style="background:${ac};width:4px"></div>
+    <div style="position:relative;z-index:1;padding:16px 18px">
+      <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:8px;margin-bottom:10px">
+        <div style="display:flex;gap:6px;flex-wrap:wrap">${gmBadge}${fmtBadge}</div>
+        <div style="display:flex;flex-direction:column;align-items:flex-end;gap:8px;flex-shrink:0">
+          <span class="badge ${sc}" style="font-size:9px;padding:4px 12px;letter-spacing:2px">${t.status.toUpperCase()}</span>
+          ${regBtn}
         </div>
-        <div class="tcard-name">${t.name}</div>
-        <div class="tcard-meta">📅 ${t.date} · 🗺 ${t.map||'TBD'} · 👥 ${regs}/${t.maxTeams||12} teams</div>
-        ${t.desc?`<div style="font-size:12px;color:rgba(255,255,255,0.55);margin-top:3px">${t.desc}</div>`:''}
+      </div>
+      <div style="flex:1;min-width:0">
+        <div class="tcard-name" style="font-size:20px;letter-spacing:2.5px;${ts}">${t.name}</div>
+        <div style="font-family:var(--font-mono);font-size:11px;color:${hasBg?'rgba(220,220,220,0.9)':'var(--muted)'};margin-top:6px;line-height:2;${ts}">
+          📅 ${t.date}&nbsp;&nbsp;·&nbsp;&nbsp;🗺 ${t.map||'TBD'}&nbsp;&nbsp;·&nbsp;&nbsp;👥 ${regs}/${t.maxTeams||12} teams
+        </div>
+        ${t.desc?`<div style="font-size:12px;color:rgba(255,255,255,0.5);margin-top:4px;${ts}">${t.desc}</div>`:''}
         ${adBtns}
       </div>
-      <div style="display:flex;flex-direction:column;align-items:flex-end;gap:7px">
-        <span class="badge ${sc}">${t.status.toUpperCase()}</span>
-        ${regBtn}
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:14px;padding-top:12px;border-top:1px solid rgba(255,255,255,0.07);flex-wrap:wrap">
+        <div style="font-family:var(--font-hd);font-size:22px;font-weight:900;color:var(--gold);${ts}">🏆 ${t.prize||'TBD'}</div>
+        ${t.entry?`<div style="font-family:var(--font-mono);font-size:11px;color:var(--gold2);font-weight:700;letter-spacing:1.5px;${ts}">ENTRY: ${t.entry}</div>`:''}
       </div>
-    </div>
-    <div class="tcard-body">
-      <div class="tcard-prize">🏆 ${t.prize||'TBD'}</div>
-      ${t.entry?`<div style="font-family:var(--font-mono);font-size:11px;color:var(--gold2);font-weight:700">ENTRY: ${t.entry}</div>`:''}
-    </div>
     </div>
   </div>`;
 }
@@ -1454,7 +1668,7 @@ function renderDailyForPlayer(myTeam){
   const _imgStyle=m=>{
     const img=(DB._d.customImages&&DB._d.customImages['match_'+m.id])||(DB._d.images&&DB._d.images['match_card_default'])||'';
     if(!img) return '';
-    return "background-image:linear-gradient(180deg,rgba(6,10,28,0.10) 0%,rgba(6,10,28,0.35) 35%,rgba(6,10,28,0.75) 70%,rgba(6,10,28,0.92) 100%),url('"+img+"');background-size:cover;background-position:center;background-repeat:no-repeat;";
+    return "background-image:url('"+img+"');background-size:cover;background-position:center;background-repeat:no-repeat;";
   };
 
   let html=`<div class="page-tabs" style="margin-bottom:14px">
@@ -1648,7 +1862,7 @@ function renderMatchCard(m){
 
   return '<div style="border:1px solid '+borderCol+';border-radius:10px;margin-bottom:14px;overflow:hidden;position:relative;'+(_imgBg||'background:rgba(6,10,28,0.95);')+'">'
     // ── FULL-CARD IMAGE OVERLAY ──
-    +(_imgBg?'<div style="position:absolute;inset:0;background:linear-gradient(180deg,rgba(6,10,28,0.10) 0%,rgba(6,10,28,0.35) 35%,rgba(6,10,28,0.75) 70%,rgba(6,10,28,0.92) 100%);z-index:0"></div>':'')
+    +(_imgBg?'':'')
     +'<div style="position:relative;z-index:1'+(_imgBg?';background:transparent':'')+'">'
 
     // ── HEADER ──
@@ -4215,7 +4429,7 @@ function pMatches_OLD(el){
 
 function renderMatchBlock(m, role, myTeam){
   const _mImg=(DB._d.customImages&&DB._d.customImages['match_'+m.id])||(DB._d.images&&DB._d.images['match_card_default'])||'';
-  const _mbg=_mImg?"background-image:linear-gradient(180deg,rgba(6,10,28,0.10) 0%,rgba(6,10,28,0.35) 35%,rgba(6,10,28,0.75) 70%,rgba(6,10,28,0.92) 100%),url('"+_mImg+"');background-size:cover;background-position:center;background-repeat:no-repeat;":'';
+  const _mbg=_mImg?"background-image:url('"+_mImg+"');background-size:cover;background-position:center;background-repeat:no-repeat;":'';
   const t1=DB.teams.find(x=>x.id===m.team1Id);
   const t2=DB.teams.find(x=>x.id===m.team2Id);
   const isBR = m.matchType==='BR';
