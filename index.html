@@ -901,7 +901,7 @@
 <script type="module">
 // ═══════ FIREBASE SETUP ═══════
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
-import { getDatabase, ref, get, set, onValue } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-database.js";
+import { getFirestore, doc, getDoc, setDoc, onSnapshot, collection, getDocs } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 
 const firebaseConfig = {
   apiKey: "AIzaSyCG2UQB0O-pM3VikwhO7ovEr1DCgMifItI",
@@ -909,96 +909,92 @@ const firebaseConfig = {
   projectId: "ffhub-3b5c3",
   storageBucket: "ffhub-3b5c3.firebasestorage.app",
   messagingSenderId: "172809979091",
-  appId: "1:172809979091:web:4cf7a080541345561a8026",
-  databaseURL: "https://ffhub-3b5c3-default-rtdb.firebaseio.com"
+  appId: "1:172809979091:web:4cf7a080541345561a8026"
 };
 
 const app = initializeApp(firebaseConfig);
-const db = getDatabase(app);
+const db = getFirestore(app);
 
-// ═══════ DATA STORE (Firebase) ═══════
-// In-memory cache so all existing S.get/S.set calls work synchronously
+// ═══════ DATA STORE (Firestore) ═══════
+// In-memory cache — sab S.get/S.set synchronously kaam karte hain
 const _cache = {};
 
 const S = {
   get: k => (_cache[k] !== undefined ? _cache[k] : null),
-  set: (k, v) => {
+  set: async (k, v) => {
     _cache[k] = v;
-    set(ref(db, 'ffhub/' + k), v).catch(e => console.error('FB write error:', e));
+    try {
+      await setDoc(doc(db, 'ffhub', k), { value: JSON.stringify(v) });
+    } catch(e) { console.error('Firestore write error:', k, e); }
   }
 };
 
-// Load all data from Firebase then start app
+const KEYS = ['admin','captains','matches','registrations','wallets','deposits','withdrawals','txns','paySettings','matchImages','globalImages'];
+
+const DEFAULTS = {
+  admin:         { username:'9999999999', password:'admin123', adminCode:'ZX@ADMIN' },
+  captains:      [],
+  matches:       [],
+  registrations: [],
+  wallets:       {},
+  deposits:      [],
+  withdrawals:   [],
+  txns:          {},
+  paySettings:   { upiId:'tournament@upi', qrUrl:'' },
+  matchImages:   {},
+  globalImages:  { loginBg:'', cardBg:'' }
+};
+
+// ═══════ INIT ═══════
 async function initData() {
   showLoader(true);
   try {
-    const snap = await get(ref(db, 'ffhub'));
-    const data = snap.val() || {};
-
-    // Defaults
-    const defaults = {
-      admin:        { username:'9999999999', password:'admin123', adminCode:'ZX@ADMIN' },
-      captains:     [],
-      matches:      [],
-      registrations:[],
-      wallets:      {},
-      deposits:     [],
-      withdrawals:  [],
-      txns:         {},
-      paySettings:  { upiId:'tournament@upi', qrUrl:'' },
-      matchImages:  {},
-      globalImages: { loginBg:'', cardBg:'' }
-    };
-
-    for (const k of Object.keys(defaults)) {
-      if (data[k] === undefined || data[k] === null) {
-        _cache[k] = defaults[k];
-        await set(ref(db, 'ffhub/' + k), defaults[k]);
-      } else {
-        // Arrays stored as objects in Firebase — convert back
-        if (Array.isArray(defaults[k]) && data[k] && typeof data[k] === 'object' && !Array.isArray(data[k])) {
-          _cache[k] = Object.values(data[k]);
+    // Load all docs from Firestore
+    for (const k of KEYS) {
+      try {
+        const snap = await getDoc(doc(db, 'ffhub', k));
+        if (snap.exists()) {
+          _cache[k] = JSON.parse(snap.data().value);
         } else {
-          _cache[k] = data[k];
+          // First time — set defaults
+          _cache[k] = DEFAULTS[k];
+          await setDoc(doc(db, 'ffhub', k), { value: JSON.stringify(DEFAULTS[k]) });
         }
+      } catch(e) {
+        _cache[k] = DEFAULTS[k];
       }
     }
 
     // Fix admin if old format
     const adm = _cache['admin'];
     if (!adm || adm.username === 'admin') {
-      _cache['admin'] = defaults.admin;
-      await set(ref(db, 'ffhub/admin'), defaults.admin);
+      _cache['admin'] = DEFAULTS.admin;
+      await setDoc(doc(db, 'ffhub', 'admin'), { value: JSON.stringify(DEFAULTS.admin) });
     } else if (!adm.adminCode) {
       adm.adminCode = 'ZX@ADMIN';
       _cache['admin'] = adm;
-      await set(ref(db, 'ffhub/admin'), adm);
+      await setDoc(doc(db, 'ffhub', 'admin'), { value: JSON.stringify(adm) });
     }
 
-    // Real-time listener — auto refresh UI when data changes from another device
-    onValue(ref(db, 'ffhub'), snapshot => {
-      const live = snapshot.val() || {};
-      const arrKeys = ['captains','matches','registrations','deposits','withdrawals'];
-      for (const k of Object.keys(defaults)) {
-        if (live[k] === undefined || live[k] === null) continue;
-        if (arrKeys.includes(k) && live[k] && typeof live[k] === 'object' && !Array.isArray(live[k])) {
-          _cache[k] = Object.values(live[k]);
-        } else {
-          _cache[k] = live[k];
+    // Real-time listener — dusre device pe change hone par auto refresh
+    for (const k of KEYS) {
+      onSnapshot(doc(db, 'ffhub', k), snap => {
+        if (snap.exists()) {
+          try { _cache[k] = JSON.parse(snap.data().value); } catch(e) {}
         }
-      }
-      // If user is logged in, refresh current section
-      if (CUR) {
-        const activeBtn = document.querySelector('.nav-btn.active');
-        if (activeBtn) {
-          const sec = activeBtn.id.replace('navbtn-','');
-          renderSection(sec);
+        // Logged in hain toh UI refresh karo
+        if (CUR) {
+          const activeBtn = document.querySelector('.nav-btn.active');
+          if (activeBtn) {
+            const sec = activeBtn.id.replace('navbtn-','');
+            renderSection(sec);
+          }
         }
-      }
-    });
+      });
+    }
 
   } catch(e) {
-    console.error('Firebase load error:', e);
+    console.error('Firestore load error:', e);
     alert('Database se connect nahi ho paya. Internet check karo aur page reload karo.');
   }
   showLoader(false);
