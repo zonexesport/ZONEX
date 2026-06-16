@@ -3,6 +3,11 @@
 <head>
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<!-- 🔐 Security Headers -->
+<meta http-equiv="X-Content-Type-Options" content="nosniff"/>
+<meta http-equiv="X-Frame-Options" content="DENY"/>
+<meta http-equiv="Referrer-Policy" content="strict-origin-when-cross-origin"/>
+<meta http-equiv="Permissions-Policy" content="camera=(), microphone=(), geolocation=()"/>
 <title>ZoneX Esports</title>
 <!-- Firebase -->
 <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
@@ -674,6 +679,7 @@ const DB = {
     if(!this._d.walletRequests) this._d.walletRequests=[];
     if(!this._d.withdrawRequests) this._d.withdrawRequests=[];
     if(!this._d.featuredMatches) this._d.featuredMatches=[];
+    if(!this._d.auditLog) this._d.auditLog=[];
   },
 
   _ensureAdmin(){
@@ -782,6 +788,184 @@ const DB = {
 
 let cu=null,regRole='player';
 
+// ══════════════════════════════════════════════
+// 🔐 SECURITY LAYER — ZoneX Frontend Security
+// ══════════════════════════════════════════════
+const SEC = {
+
+  // ── 1. XSS Sanitizer ──
+  sanitize(str){
+    if(typeof str !== 'string') return '';
+    return str
+      .replace(/&/g,'&amp;')
+      .replace(/</g,'&lt;')
+      .replace(/>/g,'&gt;')
+      .replace(/"/g,'&quot;')
+      .replace(/'/g,'&#x27;')
+      .replace(/\//g,'&#x2F;')
+      .replace(/`/g,'&#x60;')
+      .trim();
+  },
+
+  // ── 2. Input Validator ──
+  validateName(val){
+    const v=val?.trim()||'';
+    if(!v||v.length<2) return 'Min 2 characters required';
+    if(v.length>30) return 'Max 30 characters allowed';
+    if(/[<>"'`\/\\]/.test(v)) return 'Invalid characters used';
+    return null;
+  },
+  validatePhone(val){
+    const v=(val||'').replace(/\D/g,'');
+    if(v.length<10||v.length>12) return 'Valid 10-digit phone number required';
+    return null;
+  },
+  validatePassword(val){
+    if(!val||val.length<8) return 'Password must be at least 8 characters';
+    if(val.length>64) return 'Password too long';
+    if(!/[A-Z]/.test(val)) return 'Must include at least 1 uppercase letter';
+    if(!/[0-9]/.test(val)) return 'Must include at least 1 number';
+    return null;
+  },
+  validateAmount(val){
+    const n=parseInt(val)||0;
+    if(n<=0) return 'Enter a valid positive amount';
+    if(n>100000) return 'Amount too large — contact admin';
+    return null;
+  },
+
+  // ── 3. Login Brute Force Protection ──
+  _loginAttempts:{},
+  MAX_ATTEMPTS:5,
+  LOCK_DURATION:15*60*1000, // 15 minutes
+
+  checkLoginBlock(phone){
+    const key='lk_'+phone;
+    const data=this._loginAttempts[key];
+    if(!data) return false;
+    if(data.lockedUntil&&Date.now()<data.lockedUntil) return true;
+    if(data.lockedUntil&&Date.now()>=data.lockedUntil){
+      delete this._loginAttempts[key];
+      return false;
+    }
+    return false;
+  },
+  recordFailedLogin(phone){
+    const key='lk_'+phone;
+    if(!this._loginAttempts[key]) this._loginAttempts[key]={count:0};
+    this._loginAttempts[key].count++;
+    if(this._loginAttempts[key].count>=this.MAX_ATTEMPTS){
+      this._loginAttempts[key].lockedUntil=Date.now()+this.LOCK_DURATION;
+      this.auditLog('LOGIN_LOCKED',{phone,reason:'Too many failed attempts'});
+    }
+    return this._loginAttempts[key].count;
+  },
+  getRemainingLockTime(phone){
+    const key='lk_'+phone;
+    const data=this._loginAttempts[key];
+    if(!data||!data.lockedUntil) return 0;
+    return Math.max(0,Math.ceil((data.lockedUntil-Date.now())/60000));
+  },
+  clearLoginAttempts(phone){
+    delete this._loginAttempts['lk_'+phone];
+  },
+
+  // ── 4. Session Auto-Timeout (30 min inactivity) ──
+  _sessionTimer:null,
+  SESSION_TIMEOUT:30*60*1000,
+  resetSessionTimer(){
+    if(this._sessionTimer) clearTimeout(this._sessionTimer);
+    this._sessionTimer=setTimeout(()=>{
+      if(cu){
+        this.auditLog('SESSION_TIMEOUT',{userId:cu.id,name:cu.name});
+        showToast('⏱ SESSION EXPIRED — PLEASE LOGIN AGAIN',true);
+        setTimeout(()=>{cu=null;try{g('app').style.display='none';g('auth-page').style.cssText='display:flex';}catch(e){}},1500);
+      }
+    },this.SESSION_TIMEOUT);
+  },
+  startSession(){
+    this.resetSessionTimer();
+    ['click','keydown','touchstart','mousemove'].forEach(evt=>{
+      document.addEventListener(evt,()=>this.resetSessionTimer(),{passive:true});
+    });
+  },
+
+  // ── 5. Role Guard ──
+  requireRole(...roles){
+    if(!cu) return false;
+    return roles.includes(cu.role);
+  },
+  guardAdmin(){
+    if(!cu||cu.role!=='admin'){showToast('⛔ ADMIN ACCESS REQUIRED',true);return false;}
+    return true;
+  },
+  guardCaptain(){
+    if(!cu||(cu.role!=='captain'&&cu.role!=='admin')){showToast('⛔ CAPTAIN ACCESS REQUIRED',true);return false;}
+    return true;
+  },
+
+  // ── 6. Wallet Guards ──
+  validateWalletDeduct(userId,amount){
+    const u=DB.users.find(x=>x.id===userId);
+    if(!u) return {ok:false,err:'User not found'};
+    if(typeof amount!=='number'||isNaN(amount)||amount<=0) return {ok:false,err:'Invalid amount'};
+    if((u.walletBalance||0)<amount) return {ok:false,err:'Insufficient wallet balance'};
+    return {ok:true};
+  },
+  isDuplicateWalletReq(captainId,utr){
+    return DB.walletRequests.some(r=>r.utr===utr&&r.captainId===captainId&&r.status!=='rejected');
+  },
+
+  // ── 7. Audit Log ──
+  _log:[],
+  auditLog(action,data={}){
+    const entry={
+      id:'al'+Date.now()+Math.random().toString(36).slice(2,6),
+      action,
+      userId:cu?.id||'system',
+      userName:cu?.name||'system',
+      role:cu?.role||'system',
+      at:Date.now(),
+      atStr:new Date().toLocaleString('en-IN'),
+      ...data
+    };
+    this._log.unshift(entry);
+    if(this._log.length>500) this._log=this._log.slice(0,500);
+    // Also persist in DB for admin review
+    if(!DB._d.auditLog) DB._d.auditLog=[];
+    DB._d.auditLog.unshift(entry);
+    if(DB._d.auditLog.length>500) DB._d.auditLog=DB._d.auditLog.slice(0,500);
+  },
+  getLog(){ return DB._d.auditLog||this._log; },
+
+  // ── 8. Duplicate Registration Guard ──
+  isDuplicateRegistration(teamId,tournamentId){
+    return DB.registrations.some(r=>r.teamId===teamId&&r.tournamentId===tournamentId);
+  },
+  isDuplicateDailyJoin(teamId,matchId){
+    return DB.requests.some(r=>r.type==='daily_join'&&r.teamId===teamId&&r.matchId===matchId&&r.status!=='rejected');
+  },
+
+  // ── 9. Rate Limiter (action-based) ──
+  _actions:{},
+  rateLimit(action,maxPerMin=10){
+    const key=(cu?.id||'guest')+'_'+action;
+    const now=Date.now();
+    if(!this._actions[key]) this._actions[key]=[];
+    this._actions[key]=this._actions[key].filter(t=>now-t<60000);
+    if(this._actions[key].length>=maxPerMin){
+      this.auditLog('RATE_LIMITED',{action});
+      showToast('⚠ TOO MANY REQUESTS — SLOW DOWN',true);
+      return false;
+    }
+    this._actions[key].push(now);
+    return true;
+  },
+
+};
+// Boot session timer when app loads
+document.addEventListener('DOMContentLoaded',()=>SEC.startSession());
+
 // ══ PARTICLES ══
 (()=>{const c=g('particles');for(let i=0;i<10;i++){const p=document.createElement('div');const sz=Math.random()*2+1;const cols=['var(--cyan)','var(--purple)','var(--gold)'];p.className='particle';p.style.cssText=`width:${sz}px;height:${sz}px;left:${Math.random()*100}%;background:${cols[Math.floor(Math.random()*3)]};animation-duration:${Math.random()*14+8}s;animation-delay:${Math.random()*8}s;opacity:.35;box-shadow:0 0 5px currentColor;`;c.appendChild(p);}})();
 
@@ -802,27 +986,91 @@ pickRole('player');
 // ══ AUTH ══
 function doLogin(){
   const ph=v('lp').replace(/\D/g,''),pw=v('lw');
+
+  // Input check
+  if(!ph||!pw){set('le','⚠ PHONE & PASSWORD REQUIRED');return;}
+
+  // Brute force check
+  if(SEC.checkLoginBlock(ph)){
+    const mins=SEC.getRemainingLockTime(ph);
+    set('le',`🔒 ACCOUNT LOCKED — Try after ${mins} min (Too many failed attempts)`);
+    return;
+  }
+
   const u=DB.users.find(x=>x.phone.replace(/\D/g,'')===ph&&x.password===pw);
-  if(!u){set('le','⚠ INVALID CREDENTIALS');return;}
+  if(!u){
+    const attempts=SEC.recordFailedLogin(ph);
+    const remaining=SEC.MAX_ATTEMPTS-attempts;
+    if(remaining<=0){
+      set('le',`🔒 ACCOUNT LOCKED 15 MINUTES — Too many wrong attempts`);
+    } else {
+      set('le',`⚠ INVALID CREDENTIALS — ${remaining} attempt(s) remaining`);
+    }
+    return;
+  }
+
   // Block pending/banned - allow approved OR undefined (legacy users)
   if(u.status==='pending'){set('le','⚠ ACCOUNT PENDING ADMIN APPROVAL');return;}
-  if(u.status==='banned'){set('le','⚠ ACCOUNT BANNED — CONTACT ADMIN');return;}
-  cu=u;showApp();
+  if(u.status==='banned'){
+    const expiry=u.banExpiry?` (${u.banExpiry})`:'';
+    set('le',`⚠ ACCOUNT BANNED${expiry} — CONTACT ADMIN`);
+    return;
+  }
+
+  // Clear failed attempts on success
+  SEC.clearLoginAttempts(ph);
+  SEC.auditLog('LOGIN_SUCCESS',{userId:u.id,name:u.name,role:u.role});
+  cu=u;
+  SEC.startSession();
+  showApp();
 }
 function doRegister(){
-  const name=v('rn'),ph=v('rp').replace(/\D/g,''),uid=v('ru'),ign=v('ri'),pw=v('rw');
+  const name=v('rn').trim(),ph=v('rp').replace(/\D/g,''),uid=v('ru').trim(),ign=v('ri').trim(),pw=v('rw');
   const wa=v('rwa').replace(/\D/g,'')||ph;
+
+  // ── Validate all fields ──
   if(!name||!ph||!uid||!ign||!pw){set('re','⚠ ALL FIELDS REQUIRED');return;}
+
+  const nameErr=SEC.validateName(name);
+  if(nameErr){set('re','⚠ NAME: '+nameErr);return;}
+
+  const ignErr=SEC.validateName(ign);
+  if(ignErr){set('re','⚠ IGN: '+ignErr);return;}
+
+  const pwErr=SEC.validatePassword(pw);
+  if(pwErr){set('re','⚠ '+pwErr);return;}
+
   if(ph.length<10){set('re','⚠ INVALID PHONE NUMBER');return;}
+  if(uid.length<5||uid.length>12){set('re','⚠ UID must be 5–12 digits');return;}
+  if(!/^\d+$/.test(uid)){set('re','⚠ UID must be numbers only');return;}
+
   if(DB.users.find(u=>u.phone.replace(/\D/g,'')===ph)){set('re','⚠ PHONE ALREADY REGISTERED — ONE PROFILE PER NUMBER');return;}
   if(DB.users.find(u=>u.uid===uid&&u.role!=='admin')){set('re','⚠ FREE FIRE UID ALREADY REGISTERED');return;}
+
+  if(!SEC.rateLimit('register',3)){return;} // max 3 registrations per minute
 
   const needsApproval = DB._d.settings && DB._d.settings.requireApproval;
   const status = needsApproval ? 'pending' : 'approved';
 
-  const u={id:'u'+Date.now(),phone:ph,whatsapp:wa,password:pw,name,ign,uid,role:regRole,teamId:null,joinedRole:regRole,status:status,walletBalance:0};
+  // Sanitize before saving
+  const u={
+    id:'u'+Date.now(),
+    phone:ph,
+    whatsapp:wa,
+    password:pw,
+    name:SEC.sanitize(name),
+    ign:SEC.sanitize(ign),
+    uid:uid,
+    role:regRole,
+    teamId:null,
+    joinedRole:regRole,
+    status:status,
+    walletBalance:0,
+    registeredAt:Date.now()
+  };
   DB.users.push(u);
   DB.save();
+  SEC.auditLog('REGISTER',{newUserId:u.id,name:u.name,role:regRole,status});
 
   if(needsApproval){
     // Show pending screen - don't login yet
@@ -837,8 +1085,7 @@ function doRegister(){
             <div style="font-family:'Roboto Mono',monospace;font-size:11px;">
               <div style="color:#607d8b;margin-bottom:4px;">YOUR LOGIN DETAILS — SAVE THESE:</div>
               <div>📱 Phone: <span style="color:#00b4ff;font-weight:700;">${ph}</span></div>
-              <div>🔐 Password: <span style="color:#00b4ff;font-weight:700;">${pw}</span></div>
-              <div style="color:#ffc107;margin-top:8px;font-size:10px;">⚠ These will be sent to your number once approved.</div>
+              <div style="color:#ffc107;margin-top:8px;font-size:10px;">⚠ Do not share your password with anyone.</div>
             </div>
           </div>
           <button class="btn btn-cyan" style="margin-top:20px;width:100%;padding:14px;" onclick="location.reload()">← BACK TO LOGIN</button>
@@ -849,9 +1096,16 @@ function doRegister(){
 
   // No approval needed - login directly
   cu = u;
+  SEC.startSession();
   showApp();
 }
-function doLogout(){cu=null;g('app').style.display='none';g('auth-page').style.cssText='display:flex';}
+function doLogout(){
+  SEC.auditLog('LOGOUT',{userId:cu?.id,name:cu?.name});
+  if(SEC._sessionTimer) clearTimeout(SEC._sessionTimer);
+  cu=null;
+  g('app').style.display='none';
+  g('auth-page').style.cssText='display:flex';
+}
 function switchTab(t){g('tab-login').style.display=t==='login'?'block':'none';g('tab-register').style.display=t==='register'?'block':'none';document.querySelectorAll('.tab').forEach((el,i)=>el.classList.toggle('active',(i===0&&t==='login')||(i===1&&t==='register')));}
 
 // ══ APP SHELL ══
@@ -897,7 +1151,7 @@ function updateNotifBadge(){
 }
 
 const menus={
-  admin:[{id:'dashboard',l:'Dashboard'},{id:'seasons',l:'Seasons'},{id:'tournaments',l:'Tournaments'},{id:'matches',l:'Matches'},{id:'schedule',l:'Daily Match'},{id:'point-table',l:'Point Table'},{id:'teams',l:'All Teams'},{id:'players',l:'All Players'},{id:'team-chats',l:'Team Chats'},{id:'wallet',l:'Wallet Requests'},{id:'approvals',l:'Approvals'},{id:'notifications',l:'Notifications'},{id:'add-tournament',l:'Add Tournament'},{id:'image-manager',l:'Image Manager'}],
+  admin:[{id:'dashboard',l:'Dashboard'},{id:'seasons',l:'Seasons'},{id:'tournaments',l:'Tournaments'},{id:'matches',l:'Matches'},{id:'schedule',l:'Daily Match'},{id:'point-table',l:'Point Table'},{id:'teams',l:'All Teams'},{id:'players',l:'All Players'},{id:'team-chats',l:'Team Chats'},{id:'wallet',l:'Wallet Requests'},{id:'approvals',l:'Approvals'},{id:'notifications',l:'Notifications'},{id:'add-tournament',l:'Add Tournament'},{id:'image-manager',l:'Image Manager'},{id:'audit-log',l:'Audit Log 🔐'}],
   captain:[{id:'dashboard',l:'Dashboard'},{id:'seasons',l:'Seasons'},{id:'tournaments',l:'Tournaments'},{id:'matches',l:'My Matches'},{id:'my-team',l:'My Team'},{id:'wallet',l:'Wallet'},{id:'point-table',l:'Point Table'},{id:'admin-chat',l:'Contact Admin'},{id:'notifications',l:'Notifications'},{id:'profile',l:'My Profile'}],
   player:[{id:'dashboard',l:'Dashboard'},{id:'seasons',l:'Seasons'},{id:'tournaments',l:'Tournaments'},{id:'matches',l:'My Matches'},{id:'point-table',l:'Point Table'},{id:'admin-chat',l:'Contact Admin'},{id:'notifications',l:'Notifications'},{id:'profile',l:'My Profile'}],
 };
@@ -918,6 +1172,7 @@ const ico={
   'my-team':`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>`,
   profile:`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="8" r="4"/><path d="M4 21v-1a8 8 0 0 1 16 0v1"/></svg>`,
   wallet:`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="2" y="6" width="20" height="14" rx="2"/><path d="M2 10h20"/><circle cx="17" cy="15" r="1.2" fill="currentColor"/></svg>`,
+  'audit-log':`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M9 9h6M9 13h6M9 17h4"/><circle cx="18" cy="6" r="3" fill="var(--gold)" stroke="none"/></svg>`,
 };
 
 function getWalletPendingCount(){
@@ -990,7 +1245,7 @@ function nav(page){
   document.querySelectorAll('.sb-item').forEach(el=>el.classList.remove('active'));
   const sb=g('sb-'+page);if(sb)sb.classList.add('active');
   updateMobNav(page);
-  ({dashboard:pDash,seasons:pSeasons,tournaments:pTour,schedule:pSchedule,matches:pMatches,teams:pTeams,players:pPlayers,notifications:pNotifications,approvals:pAdminApprovals,'image-manager':pImageManager,'point-table':pPointTable,'team-chats':pTeamChats,'admin-chat':()=>openMyAdminChat(),'add-tournament':pAddTour,'my-team':pMyTeam,profile:pProfile,wallet:pWalletPage}[page]||pDash)(g('mc'));
+  ({dashboard:pDash,seasons:pSeasons,tournaments:pTour,schedule:pSchedule,matches:pMatches,teams:pTeams,players:pPlayers,notifications:pNotifications,approvals:pAdminApprovals,'image-manager':pImageManager,'point-table':pPointTable,'team-chats':pTeamChats,'admin-chat':()=>openMyAdminChat(),'add-tournament':pAddTour,'my-team':pMyTeam,profile:pProfile,wallet:pWalletPage,'audit-log':pAuditLog}[page]||pDash)(g('mc'));
 }
 
 // ════════════════════════════════
@@ -3154,15 +3409,23 @@ function openAddMoney(){
 }
 
 function submitAddMoney(){
+  if(!SEC.guardCaptain()) return;
+  if(!SEC.rateLimit('addMoney',3)) return;
   const amt=parseInt(v('am-amount'))||0;
-  const utr=v('am-utr');
-  if(amt<=0){set('am-err','⚠ ENTER VALID AMOUNT');return;}
-  if(!utr){set('am-err','⚠ UTR REQUIRED');return;}
+  const utr=v('am-utr').trim();
+  const amtErr=SEC.validateAmount(amt);
+  if(amtErr){set('am-err','⚠ '+amtErr);return;}
+  if(!utr||utr.length<6){set('am-err','⚠ VALID UTR REQUIRED (min 6 digits)');return;}
+  if(!/^\d+$/.test(utr)){set('am-err','⚠ UTR must be numbers only');return;}
+  // Duplicate UTR check
+  if(SEC.isDuplicateWalletReq(cu.id,utr)){set('am-err','⚠ THIS UTR ALREADY SUBMITTED — DUPLICATE NOT ALLOWED');return;}
   const mt=DB.teams.find(t=>t.captainId===cu.id);
-  DB.walletRequests.push({id:'wr'+Date.now(),captainId:cu.id,captainName:cu.name,teamName:mt?.name||'—',amount:amt,utr,status:'pending',at:Date.now()});
+  const reqId='wr'+Date.now();
+  DB.walletRequests.push({id:reqId,captainId:cu.id,captainName:cu.name,teamName:mt?.name||'—',amount:amt,utr,status:'pending',at:Date.now()});
   DB.requests.push({id:'notif'+Date.now(),type:'match_result',toUserId:'admin1',fromUserId:cu.id,status:'unread',at:Date.now(),
     title:'💰 New Wallet Add Money Request',
     body:`${cu.name} (${mt?.name||'—'}) ne 🪙${amt} add karne ki request bheji hai. UTR: ${utr}`});
+  SEC.auditLog('WALLET_ADD_REQUEST',{captainId:cu.id,amount:amt,utr,reqId});
   DB.save();closeMo();showToast('📩 REQUEST SENT! ADMIN APPROVE KAREGA',false,'ok');
   nav('wallet');
 }
@@ -3184,20 +3447,24 @@ function openWithdraw(){
 }
 
 function submitWithdraw(){
+  if(!SEC.guardCaptain()) return;
+  if(!SEC.rateLimit('withdraw',2)) return;
   const amt=parseInt(v('wd-amount'))||0;
-  const upi=v('wd-upi');
+  const upi=v('wd-upi').trim();
   const wa=v('wd-wa').replace(/\D/g,'');
-  const bal=walletBal(cu);
-  if(amt<=0){set('wd-err','⚠ ENTER VALID AMOUNT');return;}
-  if(amt>bal){set('wd-err','⚠ AMOUNT EXCEEDS WALLET BALANCE');return;}
-  if(!upi){set('wd-err','⚠ UPI ID REQUIRED');return;}
+  // Secure balance check
+  const check=SEC.validateWalletDeduct(cu.id,amt);
+  if(!check.ok){set('wd-err','⚠ '+check.err);return;}
+  if(!upi||!upi.includes('@')){set('wd-err','⚠ VALID UPI ID REQUIRED (e.g. name@upi)');return;}
   if(wa.length<10){set('wd-err','⚠ VALID WHATSAPP NUMBER REQUIRED');return;}
   const mt=DB.teams.find(t=>t.captainId===cu.id);
-  deductWallet(amt); // hold amount until admin acts
-  DB.withdrawRequests.push({id:'wd'+Date.now(),captainId:cu.id,captainName:cu.name,teamName:mt?.name||'—',amount:amt,upiId:upi,whatsapp:wa,status:'pending',at:Date.now()});
+  const wdId='wd'+Date.now();
+  deductWallet(amt);
+  DB.withdrawRequests.push({id:wdId,captainId:cu.id,captainName:cu.name,teamName:mt?.name||'—',amount:amt,upiId:upi,whatsapp:wa,status:'pending',at:Date.now()});
   DB.requests.push({id:'notif'+Date.now(),type:'match_result',toUserId:'admin1',fromUserId:cu.id,status:'unread',at:Date.now(),
     title:'💸 New Withdraw Request',
     body:`${cu.name} (${mt?.name||'—'}) ne 🪙${amt} withdraw karne ki request bheji hai. UPI: ${upi} · WhatsApp: ${wa}`});
+  SEC.auditLog('WALLET_WITHDRAW_REQUEST',{captainId:cu.id,amount:amt,upiId:upi,wdId});
   DB.save();closeMo();showToast('📩 WITHDRAW REQUEST SENT!',false,'ok');
   nav('wallet');
 }
@@ -3292,10 +3559,17 @@ function uploadWalletQR(e){
 }
 
 function approveWalletReq(id){
-  const r=DB.walletRequests.find(x=>x.id===id);if(!r||r.status!=='pending')return;
-  const u=DB.users.find(x=>x.id===r.captainId);if(!u)return;
-  u.walletBalance=(u.walletBalance||0)+r.amount;
+  if(!SEC.guardAdmin()) return;
+  const r=DB.walletRequests.find(x=>x.id===id);
+  if(!r){showToast('⚠ REQUEST NOT FOUND',true);return;}
+  if(r.status!=='pending'){showToast('⚠ ALREADY PROCESSED',true);return;}
+  const u=DB.users.find(x=>x.id===r.captainId);if(!u){showToast('⚠ USER NOT FOUND',true);return;}
+  const prevBal=u.walletBalance||0;
+  u.walletBalance=prevBal+r.amount;
   r.status='approved';
+  r.approvedBy=cu.id;
+  r.approvedAt=Date.now();
+  SEC.auditLog('WALLET_ADD_APPROVED',{adminId:cu.id,userId:r.captainId,amount:r.amount,utr:r.utr,prevBal,newBal:u.walletBalance,reqId:id});
   DB.requests.push({id:'notif'+Date.now(),type:'match_result',toUserId:r.captainId,fromUserId:'admin1',status:'unread',at:Date.now(),
     title:'✅ Wallet Recharge Approved!',
     body:`🪙${r.amount} tumhare wallet mein add ho gaye. New balance: 🪙${u.walletBalance}`});
@@ -3303,9 +3577,13 @@ function approveWalletReq(id){
 }
 
 function rejectWalletReq(id){
+  if(!SEC.guardAdmin()) return;
   const r=DB.walletRequests.find(x=>x.id===id);if(!r||r.status!=='pending')return;
   if(!confirm('Reject this add money request?'))return;
   r.status='rejected';
+  r.rejectedBy=cu.id;
+  r.rejectedAt=Date.now();
+  SEC.auditLog('WALLET_ADD_REJECTED',{adminId:cu.id,userId:r.captainId,amount:r.amount,reqId:id});
   DB.requests.push({id:'notif'+Date.now(),type:'match_result',toUserId:r.captainId,fromUserId:'admin1',status:'unread',at:Date.now(),
     title:'❌ Wallet Recharge Rejected',
     body:`Tumhari 🪙${r.amount} add money request reject ho gayi. UTR check karke admin se contact karo.`});
@@ -3313,9 +3591,11 @@ function rejectWalletReq(id){
 }
 
 function approveWithdrawReq(id){
+  if(!SEC.guardAdmin()) return;
   const r=DB.withdrawRequests.find(x=>x.id===id);if(!r||r.status!=='pending')return;
   if(!confirm(`Mark as PAID? Manually transfer 🪙${r.amount} to UPI: ${r.upiId}`))return;
-  r.status='approved';r.paidAt=Date.now();
+  r.status='approved';r.paidAt=Date.now();r.approvedBy=cu.id;
+  SEC.auditLog('WALLET_WITHDRAW_APPROVED',{adminId:cu.id,userId:r.captainId,amount:r.amount,upiId:r.upiId,reqId:id});
   DB.requests.push({id:'notif'+Date.now(),type:'match_result',toUserId:r.captainId,fromUserId:'admin1',status:'unread',at:Date.now(),
     title:'✅ Withdrawal Processed!',
     body:`🪙${r.amount} tumhare UPI (${r.upiId}) par transfer kar diye gaye hain.`});
@@ -3620,7 +3900,6 @@ function submitProfileEditRequest(){
   DB.save();closeMo();showToast('📩 REQUEST SENT! ADMIN WILL REVIEW',false,'ok');
 }
 function saveProfile(){const n=v('ep-n'),i=v('ep-i'),u=v('ep-u'),w=v('ep-w');if(!n||!i||!u){set('ep-e','⚠ REQUIRED FIELDS');return;}cu.name=n;cu.ign=i;cu.uid=u;if(w)cu.password=w;const dbU=DB.users.find(x=>x.id===cu.id);if(dbU){dbU.name=n;dbU.ign=i;dbU.uid=u;if(w)dbU.password=w;}DB.save();closeMo();showToast('✓ PROFILE UPDATED',false,'ok');g('nav-nm').textContent=cu.name;pProfile(g('mc'));}
-function saveProfile(){const n=v('ep-n'),i=v('ep-i'),u=v('ep-u'),w=v('ep-w');if(!n||!i||!u){set('ep-e','⚠ REQUIRED FIELDS');return;}cu.name=n;cu.ign=i;cu.uid=u;if(w)cu.password=w;DB.save();closeMo();showToast('✓ PROFILE UPDATED',false,'ok');g('nav-nm').textContent=cu.name;pProfile(g('mc'));}
 
 // ══ SEASON MODULE LOADER ══
 // Admin can paste a season module like:
@@ -3799,9 +4078,20 @@ function pAdminApprovals(el){
 function approveProfileEdit(id){const r=DB.requests.find(x=>x.id===id);if(!r)return;const u=DB.users.find(x=>x.id===r.fromUserId);if(!u)return;u.name=r.newName;u.ign=r.newIgn;u.uid=r.newUid;if(r.newPw)u.password=r.newPw;r.status='approved';DB.requests.push({id:'notif'+Date.now(),type:'match_result',toUserId:u.id,fromUserId:'admin1',status:'unread',at:Date.now(),title:'✅ Profile Updated!',body:`Tumhara profile update ho gaya. Name: ${u.name} · IGN: ${u.ign}`});DB.save();showToast('✓ PROFILE UPDATED',false,'ok');pAdminApprovals(g('mc'));}
 function rejectProfileEdit(id){const r=DB.requests.find(x=>x.id===id);if(!r)return;const u=DB.users.find(x=>x.id===r.fromUserId);r.status='rejected';DB.requests.push({id:'notif'+Date.now(),type:'match_result',toUserId:r.fromUserId,fromUserId:'admin1',status:'unread',at:Date.now(),title:'❌ Profile Edit Rejected',body:'Tumhari profile edit request reject ho gayi. Admin se contact karo.'});DB.save();showToast('REJECTED');pAdminApprovals(g('mc'));}
 function toggleApproval(){DB._d.settings.requireApproval=!DB._d.settings.requireApproval;DB.save();showToast(DB._d.settings.requireApproval?'✓ APPROVAL ENABLED':'APPROVAL DISABLED',false,'ok');pAdminApprovals(g('mc'));}
-function approveUser(id){const u=DB.users.find(x=>x.id===id);if(u){u.status='approved';DB.save();showToast('✓ USER APPROVED',false,'ok');pAdminApprovals(g('mc'));}}
-function rejectUser(id){if(!confirm('Delete this profile?'))return;DB._d.users=DB.users.filter(x=>x.id!==id);DB.save();showToast('PROFILE DELETED');pAdminApprovals(g('mc'));}
-function unbanUser(id){const u=DB.users.find(x=>x.id===id);if(u){u.status='approved';u.banExpiry=null;DB.save();showToast('✓ UNBANNED',false,'ok');pAdminApprovals(g('mc'));}}
+function approveUser(id){
+  if(!SEC.guardAdmin()) return;
+  const u=DB.users.find(x=>x.id===id);
+  if(u){u.status='approved';SEC.auditLog('USER_APPROVED',{adminId:cu.id,userId:id,name:u.name});DB.save();showToast('✓ USER APPROVED',false,'ok');pAdminApprovals(g('mc'));}}
+function rejectUser(id){
+  if(!SEC.guardAdmin()) return;
+  if(!confirm('Delete this profile?'))return;
+  const u=DB.users.find(x=>x.id===id);
+  SEC.auditLog('USER_REJECTED',{adminId:cu.id,userId:id,name:u?.name});
+  DB._d.users=DB.users.filter(x=>x.id!==id);DB.save();showToast('PROFILE DELETED');pAdminApprovals(g('mc'));}
+function unbanUser(id){
+  if(!SEC.guardAdmin()) return;
+  const u=DB.users.find(x=>x.id===id);
+  if(u){u.status='approved';u.banExpiry=null;SEC.auditLog('USER_UNBANNED',{adminId:cu.id,userId:id,name:u.name});DB.save();showToast('✓ UNBANNED',false,'ok');pAdminApprovals(g('mc'));}}
 
 // ── ADMIN: BAN TEAM FROM TOURNAMENT/SEASON ──
 function openBanOptions(userId){
@@ -3817,11 +4107,14 @@ function openBanOptions(userId){
     <button class="btn btn-red btn-full" onclick="doBan('${userId}')">⚡ CONFIRM BAN</button>`);
 }
 function doBan(userId){
+  if(!SEC.guardAdmin()) return;
   const u=DB.users.find(x=>x.id===userId);if(!u)return;
-  const dur=v('ban-dur'),reason=v('ban-reason');
-  u.status='banned';u.banExpiry=dur==='permanent'?'Permanent':dur;u.banReason=reason;
+  const dur=v('ban-dur'),reason=v('ban-reason').trim();
+  if(!reason){showToast('⚠ BAN REASON REQUIRED',true);return;}
+  u.status='banned';u.banExpiry=dur==='permanent'?'Permanent':dur;u.banReason=SEC.sanitize(reason);
   // Also remove from all teams
   DB.teams.forEach(t=>{t.members=t.members.filter(id=>id!==userId);});
+  SEC.auditLog('USER_BANNED',{adminId:cu.id,bannedUserId:userId,name:u.name,duration:dur,reason:u.banReason});
   DB.save();closeMo();showToast('🚫 USER BANNED',false,'');pPlayers(g('mc'));
 }
 
@@ -4245,40 +4538,19 @@ function adminMakeCaptain(teamId,newCapId){
 }
 
 // ── TEAM CHAT ──
-function openTeamChat(){
-  const mt=DB.teams.find(t=>t.captainId===cu.id)||DB.teams.find(t=>t.members.includes(cu.id));
-  if(!mt){showToast('⚠ NOT IN A TEAM',true);return;}
-  if(!mt.chat)mt.chat=[];
-  let html=`<button class="mo-close" onclick="closeMo()">✕</button>
-    <div class="mo-title">💬 TEAM CHAT — ${mt.name}</div>
-    <div id="chat-msgs" style="max-height:280px;overflow-y:auto;margin-bottom:12px;display:flex;flex-direction:column;gap:6px;padding:2px">`;
-  if(!mt.chat.length){html+='<div style="text-align:center;padding:20px;color:var(--muted);font-family:var(--font-mono);font-size:10px;letter-spacing:2px">// NO MESSAGES YET</div>';}
-  else mt.chat.forEach(msg=>{
-    const isMe=msg.userId===cu.id;
-    html+=`<div style="display:flex;flex-direction:column;align-items:${isMe?'flex-end':'flex-start'}">
-      <div style="font-family:var(--font-mono);font-size:9px;color:var(--muted);margin-bottom:2px">${isMe?'YOU':msg.name} · ${msg.time}</div>
-      <div style="background:${isMe?'rgba(0,245,255,0.1)':'rgba(191,95,255,0.08)'};border:1px solid ${isMe?'rgba(0,245,255,0.2)':'rgba(191,95,255,0.2)'};padding:7px 12px;max-width:80%;font-size:13px;font-family:var(--font-body)">${msg.text}</div>
-    </div>`;
-  });
-  html+=`</div>
-    <div style="display:flex;gap:8px">
-      <input class="fi" id="chat-inp" placeholder="Type message..." style="margin-bottom:0;flex:1" onkeydown="if(event.key==='Enter')sendChatMsg('${mt.id}')"/>
-      <button class="btn btn-cyan btn-sm" onclick="sendChatMsg('${mt.id}')">SEND</button>
-    </div>`;
-  openMo(html);
-  setTimeout(()=>{const m=g('chat-msgs');if(m)m.scrollTop=m.scrollHeight;},50);
-}
 function sendChatMsg(teamId){
+  if(!SEC.rateLimit('chat',20)) return;
   const team=DB.teams.find(x=>x.id===teamId);
   if(!team)return;
   if(!team.chat)team.chat=[];
-  const txt=v('chat-inp');if(!txt)return;
+  const raw=v('chat-inp');if(!raw||!raw.trim())return;
+  const txt=SEC.sanitize(raw);
+  if(txt.length>300){showToast('⚠ MESSAGE TOO LONG (max 300 chars)',true);return;}
   const now=new Date();
-  team.chat.push({userId:cu.id,name:cu.name,ign:cu.ign,text:txt,time:now.toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit'})});
+  team.chat.push({userId:cu.id,name:SEC.sanitize(cu.name),ign:SEC.sanitize(cu.ign),text:txt,time:now.toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit'})});
   DB.save();
   // re-render chat
   const msgs=g('chat-msgs');
-  const isMe=true;
   const div=document.createElement('div');
   div.style.cssText='display:flex;flex-direction:column;align-items:flex-end';
   div.innerHTML=`<div style="font-family:var(--font-mono);font-size:9px;color:var(--muted);margin-bottom:2px">YOU · ${now.toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit'})}</div>
@@ -4301,12 +4573,19 @@ function openAdminChangePw(){
     <button class="btn btn-red btn-full" onclick="doChangeAdminPw()">⚡ CHANGE PASSWORD</button>`);
 }
 function doChangeAdminPw(){
+  if(!SEC.guardAdmin()) return;
   const old_pw=v('cpw-old'),nw=v('cpw-new'),cfm=v('cpw-cfm');
   if(!old_pw||!nw||!cfm){set('cpw-err','⚠ ALL FIELDS REQUIRED');return;}
   if(cu.password!==old_pw){set('cpw-err','⚠ CURRENT PASSWORD WRONG');return;}
   if(nw!==cfm){set('cpw-err','⚠ PASSWORDS DO NOT MATCH');return;}
-  if(nw.length<6){set('cpw-err','⚠ MIN 6 CHARACTERS');return;}
-  cu.password=nw;DB.save();closeMo();showToast('✓ PASSWORD CHANGED',false,'ok');
+  const pwErr=SEC.validatePassword(nw);
+  if(pwErr){set('cpw-err','⚠ '+pwErr);return;}
+  cu.password=nw;
+  const dbUser=DB.users.find(x=>x.id===cu.id);
+  if(dbUser) dbUser.password=nw;
+  DB.save();
+  SEC.auditLog('ADMIN_CHANGE_PASSWORD',{adminId:cu.id});
+  closeMo();showToast('✓ PASSWORD CHANGED SUCCESSFULLY',false,'ok');
 }
 
 // ── PHONE VERIFICATION — will be added later with Firebase/MSG91 ──
@@ -5130,114 +5409,6 @@ function saveEditMatch(id){
 function deleteMatch2(id){if(!confirm('Delete match?'))return;DB._d.matches=DB.matches.filter(x=>x.id!==id);DB.save();showToast('DELETED');pMatches(g('mc'));}
 
 // ── UPGRADE NOTIFICATIONS PAGE ──
-function pNotifications(el){
-  let html=`<div style="animation:pageIn .35s ease"><div class="sec-hd"><div class="sec-title"><div class="sec-bar"></div>NOTIFICATIONS</div></div>`;
-
-  // ── Match notifications for everyone ──
-  const myMatchNotifs=DB.requests.filter(r=>r.toUserId===cu.id&&['match_scheduled','room_released','match_result'].includes(r.type)).sort((a,b)=>b.at-a.at);
-  if(myMatchNotifs.length){
-    html+=`<div class="xcard"><div class="xcard-t" style="display:flex;align-items:center;justify-content:space-between">
-      <span>🔔 Match Alerts (${myMatchNotifs.filter(n=>n.status==='unread').length} unread)</span>
-      <button class="btn btn-red btn-xs" onclick="clearAllNotifs()">🗑 CLEAR ALL</button>
-    </div>`;
-    myMatchNotifs.forEach(n=>{
-      const typeIcon={match_scheduled:'📅',room_released:'🔓',match_result:'🏆'}[n.type]||'🔔';
-      html+=`<div class="notif-item${n.status==='unread'?' unread':''}" style="display:flex;align-items:flex-start;gap:8px;justify-content:space-between">
-        <div style="display:flex;align-items:flex-start;gap:8px;flex:1;cursor:pointer" onclick="markRead('${n.id}')">
-          <div class="notif-dot-sm" style="${n.status==='unread'?'':'background:var(--muted2)'}"></div>
-          <div><div class="notif-title">${typeIcon} ${n.title||n.type}</div>
-          <div class="notif-body">${n.body||''}</div></div>
-        </div>
-        <button class="btn btn-red btn-xs" style="flex-shrink:0;padding:3px 7px;font-size:9px" onclick="deleteNotif('${n.id}')">✕</button>
-      </div>`;
-    });
-    html+=`<button class="btn btn-ghost btn-xs" onclick="markAllRead()" style="margin-top:6px">MARK ALL READ</button></div>`;
-  }
-
-  // Admin: role change requests
-  if(cu.role==='admin'){
-    const roleReqs=DB.requests.filter(r=>r.type==='role_change'&&r.status==='pending');
-    html+=`<div class="xcard"><div class="xcard-t">👑 Captain Role Requests (${roleReqs.length})</div>`;
-    if(!roleReqs.length)html+=`<div style="color:var(--muted);font-family:var(--font-mono);font-size:10px;letter-spacing:2px">// NONE PENDING</div>`;
-    else roleReqs.forEach(r=>{
-      const u=DB.users.find(x=>x.id===r.fromUserId);
-      html+=`<div class="req-card"><div><div class="req-from">👤 ${u?.name||'Unknown'}</div><div class="req-meta">IGN: ${u?.ign||'—'} · 📱 ${u?.phone||'—'}</div></div>
-        <div class="prow-acts"><button class="btn btn-green btn-xs" onclick="approveRole('${r.id}')">APPROVE</button><button class="btn btn-red btn-xs" onclick="rejectReq('${r.id}')">REJECT</button></div></div>`;
-    });
-    html+=`</div>`;
-
-    const regsWithUTR=DB.registrations.filter(r=>r.utr);
-    if(regsWithUTR.length){
-      html+=`<div class="xcard"><div class="xcard-t">💰 Payment UTRs (${regsWithUTR.length})</div>`;
-      regsWithUTR.forEach(r=>{
-        const t=DB.tournaments.find(x=>x.id===r.tournamentId);
-        const team=DB.teams.find(x=>x.id===r.teamId);
-        html+=`<div class="prow"><div class="prow-l"><div class="av av-g">₹</div><div>
-          <div class="prow-name">${team?.name||'Unknown'}</div>
-          <div class="prow-uid">Tournament: ${t?.name||'—'}</div>
-          <div class="prow-uid" style="color:var(--green)">UTR: ${r.utr}</div>
-        </div></div><span class="badge b-open">PAID</span></div>`;
-      });
-      html+=`</div>`;
-    }
-  }
-
-  // Captain: player requests + invite players
-  if(cu.role==='captain'){
-    const joinReqs=DB.requests.filter(r=>r.toUserId===cu.id&&r.type==='player_request'&&r.status==='pending');
-    const mt=DB.teams.find(t=>t.captainId===cu.id);
-    html+=`<div class="xcard"><div class="xcard-t">📩 Join Requests (${joinReqs.length})</div>`;
-    if(!joinReqs.length)html+=`<div style="color:var(--muted);font-family:var(--font-mono);font-size:10px;letter-spacing:2px">// NONE</div>`;
-    else joinReqs.forEach(r=>{
-      const u=DB.users.find(x=>x.id===r.fromUserId);
-      html+=`<div class="req-card"><div><div class="req-from">🎮 ${u?.name||'?'}</div><div class="req-meta">IGN: ${u?.ign||'—'} · UID: ${u?.uid||'—'}</div></div>
-        <div class="prow-acts"><button class="btn btn-green btn-xs" onclick="acceptJoin('${r.id}')">ACCEPT</button><button class="btn btn-red btn-xs" onclick="rejectReq('${r.id}')">REJECT</button></div></div>`;
-    });
-    html+=`</div>`;
-    html+=`<div class="xcard"><div class="xcard-t">📤 Invite Players</div>`;
-    const avail=DB.users.filter(u=>u.role==='player'&&!u.teamId&&u.id!==cu.id&&!DB.requests.find(r=>r.fromUserId===cu.id&&r.toUserId===u.id&&r.type==='captain_invite'&&r.status==='pending'));
-    if(!avail.length)html+=`<div style="color:var(--muted);font-family:var(--font-mono);font-size:10px;letter-spacing:2px">// NO AVAILABLE PLAYERS</div>`;
-    else avail.forEach(p=>{
-      html+=`<div class="prow"><div class="prow-l"><div class="av av-c">${p.name[0]}</div><div><div class="prow-name">${p.name}</div><div class="prow-uid">IGN: ${p.ign} · UID: ${p.uid}</div></div></div>
-        <button class="btn btn-cyan btn-xs" onclick="sendInvite('${p.id}')">INVITE</button></div>`;
-    });
-    html+=`</div>`;
-    html+=`<div class="xcard"><div class="xcard-t">🔄 Role Options</div><p style="color:var(--muted);font-size:13px;margin-bottom:10px">Currently: <span class="nav-role r-captain">CAPTAIN</span></p><button class="btn btn-ghost btn-sm" onclick="requestPlayerRole()">🎮 SWITCH TO PLAYER</button></div>`;
-  }
-
-  // Player: invites + role request
-  if(cu.role==='player'){
-    const invites=DB.requests.filter(r=>r.toUserId===cu.id&&r.type==='captain_invite'&&r.status==='pending');
-    html+=`<div class="xcard"><div class="xcard-t">📬 Team Invites (${invites.length})</div>`;
-    if(!invites.length)html+=`<div style="color:var(--muted);font-family:var(--font-mono);font-size:10px;letter-spacing:2px">// NO INVITES</div>`;
-    else invites.forEach(r=>{
-      const cap=DB.users.find(x=>x.id===r.fromUserId);
-      const team=DB.teams.find(t=>t.captainId===r.fromUserId);
-      html+=`<div class="req-card"><div><div class="req-from">👑 ${cap?.name||'?'} invited you!</div><div class="req-meta">Team: ${team?.name||'—'} [${team?.tag||'—'}]</div></div>
-        <div class="prow-acts"><button class="btn btn-green btn-xs" onclick="acceptInvite('${r.id}')">JOIN</button><button class="btn btn-red btn-xs" onclick="rejectReq('${r.id}')">DECLINE</button></div></div>`;
-    });
-    html+=`</div>`;
-    const alreadyInTeam=DB.teams.find(t=>t.members.includes(cu.id));
-    if(!alreadyInTeam){
-      const captains=DB.users.filter(u=>u.role==='captain'&&!DB.requests.find(r=>r.fromUserId===cu.id&&r.toUserId===u.id&&r.type==='player_request'&&r.status==='pending'));
-      html+=`<div class="xcard"><div class="xcard-t">📤 Request to Join Team</div>`;
-      const capTeams=captains.map(c=>({cap:c,team:DB.teams.find(t=>t.captainId===c.id)})).filter(x=>x.team);
-      if(!capTeams.length)html+=`<div style="color:var(--muted);font-family:var(--font-mono);font-size:10px;letter-spacing:2px">// NO TEAMS AVAILABLE</div>`;
-      else capTeams.forEach(({cap,team})=>{
-        html+=`<div class="prow"><div class="prow-l"><div class="av av-p">${cap.name[0]}</div><div><div class="prow-name">${team.name} <span class="team-tag-sm" style="font-size:8px">${team.tag}</span></div><div class="prow-uid">Captain: ${cap.name} · ${team.members.length}/6</div></div></div>
-          <button class="btn btn-purple btn-xs" onclick="sendJoinReq('${cap.id}')">REQUEST</button></div>`;
-      });
-      html+=`</div>`;
-    }
-    html+=`<div class="xcard"><div class="xcard-t">🔄 Role</div>
-      ${DB.requests.find(r=>r.fromUserId===cu.id&&r.type==='role_change'&&r.status==='pending')
-        ?`<div style="color:var(--gold);font-family:var(--font-mono);font-size:11px">⏳ CAPTAIN REQUEST PENDING</div>`
-        :`<button class="btn btn-purple btn-sm" onclick="requestCapt()">👑 REQUEST CAPTAIN ROLE</button>`}
-    </div>`;
-  }
-
-  html+=`</div>`;el.innerHTML=html;
-}
 
 function markRead(id){const n=DB.requests.find(x=>x.id===id);if(n){n.status='read';DB.save();updateNotifBadge();buildSidebar();}}
 function deleteNotif(id){
@@ -5353,6 +5524,96 @@ function doResetPassword(userId){
   DB.save();
   closeMo();
   showToast('✓ PASSWORD RESET FOR '+u.name,false,'ok');
+}
+
+// ══ AUDIT LOG PAGE (Admin Only) ══
+function pAuditLog(el){
+  if(!SEC.guardAdmin()) return;
+  const log=SEC.getLog();
+  const actionColors={
+    LOGIN_SUCCESS:'var(--green)',LOGIN_LOCKED:'var(--red)',LOGOUT:'var(--muted)',
+    REGISTER:'var(--cyan)',SESSION_TIMEOUT:'var(--gold)',RATE_LIMITED:'var(--orange)',
+    WALLET_ADD_APPROVED:'var(--green)',WALLET_ADD_REJECTED:'var(--red)',
+    WALLET_ADD_REQUEST:'var(--cyan)',WALLET_WITHDRAW_REQUEST:'var(--gold)',
+    WALLET_WITHDRAW_APPROVED:'var(--green)',
+    USER_BANNED:'var(--red)',USER_UNBANNED:'var(--green)',
+    USER_APPROVED:'var(--cyan)',USER_REJECTED:'var(--red)',
+    ADMIN_CHANGE_PASSWORD:'var(--orange)',
+    LOGIN_LOCKED:'var(--red)',
+  };
+  const filterActions=['ALL','LOGIN_SUCCESS','LOGIN_LOCKED','WALLET_ADD_APPROVED','WALLET_ADD_REJECTED','WALLET_WITHDRAW_APPROVED','USER_BANNED','REGISTER','RATE_LIMITED'];
+  el.innerHTML=`<div style="animation:pageIn .35s ease">
+    <div class="sec-hd">
+      <div class="sec-title"><div class="sec-bar"></div>🔐 AUDIT LOG</div>
+      <div style="display:flex;gap:6px">
+        <button class="btn btn-red btn-xs" onclick="clearAuditLog()">🗑 CLEAR</button>
+      </div>
+    </div>
+    <div style="background:rgba(255,193,7,0.04);border:1px solid rgba(255,193,7,0.2);border-radius:4px;padding:10px 14px;margin-bottom:14px;font-family:var(--font-mono);font-size:10px;color:#aaa;line-height:1.8">
+      🔒 Ye log <strong style="color:var(--gold)">immutable</strong> track karta hai — sari admin actions, login events, wallet transactions.<br>
+      Total entries: <strong style="color:var(--cyan)">${log.length}</strong>
+    </div>
+    <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:14px" id="audit-filters">
+      ${filterActions.map(a=>`<button class="btn btn-ghost btn-xs" onclick="filterAuditLog('${a}')" style="${a==='ALL'?'background:rgba(26,111,255,0.15);color:#2979ff;border-color:rgba(26,111,255,0.4)':''}">${a==='ALL'?'📋 ALL':a.replace(/_/g,' ')}</button>`).join('')}
+    </div>
+    <div id="audit-list">
+      ${!log.length?`<div style="text-align:center;padding:40px;color:var(--muted);font-family:var(--font-mono);font-size:10px;letter-spacing:2px">// NO AUDIT ENTRIES YET</div>`:
+      log.map(e=>{
+        const col=actionColors[e.action]||'var(--muted)';
+        const extraInfo=Object.entries(e)
+          .filter(([k])=>!['id','action','userId','userName','role','at','atStr'].includes(k))
+          .map(([k,v])=>`<span style="color:var(--muted)">${k}:</span> <span style="color:#ccc">${String(v).slice(0,60)}</span>`)
+          .join(' &nbsp;·&nbsp; ');
+        return`<div style="padding:10px 12px;border:1px solid rgba(255,255,255,0.06);border-left:3px solid ${col};border-radius:4px;margin-bottom:6px;background:rgba(255,255,255,0.01)">
+          <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:4px">
+            <span style="font-family:var(--font-mono);font-size:10px;font-weight:700;color:${col};letter-spacing:1px">${e.action}</span>
+            <span style="font-family:var(--font-mono);font-size:9px;color:var(--muted)">${e.atStr||new Date(e.at).toLocaleString('en-IN')}</span>
+            <span style="font-family:var(--font-mono);font-size:9px;background:rgba(255,255,255,0.05);padding:1px 6px;border-radius:2px;color:#aaa">${e.role?.toUpperCase()||'SYS'}</span>
+          </div>
+          <div style="font-size:12px;color:#fff;margin-bottom:${extraInfo?'4px':'0'}">${e.userName||'—'} <span style="color:var(--muted);font-size:10px">(${e.userId||'—'})</span></div>
+          ${extraInfo?`<div style="font-family:var(--font-mono);font-size:9px;line-height:1.8;color:var(--muted)">${extraInfo}</div>`:''}
+        </div>`;
+      }).join('')}
+    </div>
+  </div>`;
+}
+
+function filterAuditLog(action){
+  document.querySelectorAll('#audit-filters button').forEach(b=>{
+    b.style.background='';b.style.color='';b.style.borderColor='';
+  });
+  event.target.style.background='rgba(26,111,255,0.15)';
+  event.target.style.color='#2979ff';
+  event.target.style.borderColor='rgba(26,111,255,0.4)';
+  const log=SEC.getLog();
+  const filtered=action==='ALL'?log:log.filter(e=>e.action===action);
+  const list=document.getElementById('audit-list');
+  if(!list)return;
+  const actionColors={LOGIN_SUCCESS:'var(--green)',LOGIN_LOCKED:'var(--red)',LOGOUT:'var(--muted)',REGISTER:'var(--cyan)',SESSION_TIMEOUT:'var(--gold)',RATE_LIMITED:'var(--orange)',WALLET_ADD_APPROVED:'var(--green)',WALLET_ADD_REJECTED:'var(--red)',WALLET_ADD_REQUEST:'var(--cyan)',WALLET_WITHDRAW_REQUEST:'var(--gold)',WALLET_WITHDRAW_APPROVED:'var(--green)',USER_BANNED:'var(--red)',USER_UNBANNED:'var(--green)',USER_APPROVED:'var(--cyan)',USER_REJECTED:'var(--red)',ADMIN_CHANGE_PASSWORD:'var(--orange)'};
+  list.innerHTML=!filtered.length?`<div style="text-align:center;padding:30px;color:var(--muted);font-family:var(--font-mono);font-size:10px">// NO ENTRIES FOR THIS FILTER</div>`:
+  filtered.map(e=>{
+    const col=actionColors[e.action]||'var(--muted)';
+    const extraInfo=Object.entries(e).filter(([k])=>!['id','action','userId','userName','role','at','atStr'].includes(k)).map(([k,v])=>`<span style="color:var(--muted)">${k}:</span> <span style="color:#ccc">${String(v).slice(0,60)}</span>`).join(' · ');
+    return`<div style="padding:10px 12px;border:1px solid rgba(255,255,255,0.06);border-left:3px solid ${col};border-radius:4px;margin-bottom:6px;background:rgba(255,255,255,0.01)">
+      <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:4px">
+        <span style="font-family:var(--font-mono);font-size:10px;font-weight:700;color:${col};letter-spacing:1px">${e.action}</span>
+        <span style="font-family:var(--font-mono);font-size:9px;color:var(--muted)">${e.atStr||new Date(e.at).toLocaleString('en-IN')}</span>
+        <span style="font-family:var(--font-mono);font-size:9px;background:rgba(255,255,255,0.05);padding:1px 6px;border-radius:2px;color:#aaa">${e.role?.toUpperCase()||'SYS'}</span>
+      </div>
+      <div style="font-size:12px;color:#fff;margin-bottom:${extraInfo?'4px':'0'}">${e.userName||'—'} <span style="color:var(--muted);font-size:10px">(${e.userId||'—'})</span></div>
+      ${extraInfo?`<div style="font-family:var(--font-mono);font-size:9px;line-height:1.8;color:var(--muted)">${extraInfo}</div>`:''}
+    </div>`;
+  }).join('');
+}
+
+function clearAuditLog(){
+  if(!SEC.guardAdmin()) return;
+  if(!confirm('Clear audit log? (Last 50 entries will be kept for safety)')) return;
+  if(DB._d.auditLog) DB._d.auditLog=DB._d.auditLog.slice(0,50);
+  SEC._log=SEC._log.slice(0,50);
+  DB.save();
+  showToast('✓ AUDIT LOG CLEARED (last 50 kept)',false,'ok');
+  pAuditLog(g('mc'));
 }
 
 // ══ WALLET HELPERS ══
